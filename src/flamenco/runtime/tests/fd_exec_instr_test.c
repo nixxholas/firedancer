@@ -1732,7 +1732,7 @@ fd_exec_vm_syscall_test_run( fd_exec_instr_test_runner_t * runner,
     }
   }
 
-  if (input->vm_ctx.heap_max > FD_VM_HEAP_DEFAULT) {
+  if (input->vm_ctx.heap_max > FD_VM_HEAP_MAX) {
     goto error;
   }
 
