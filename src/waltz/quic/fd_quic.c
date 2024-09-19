@@ -1763,18 +1763,6 @@ fd_quic_schedule_conn( fd_quic_conn_t * conn ) {
   )
 }
 
-/* get the service interval, while ensuring the value
-   is sufficient */
-ulong
-fd_quic_get_service_interval( fd_quic_t * quic ) {
-  ulong min_service_interval = (ulong)1e5;
-  ulong service_interval = quic->config.service_interval;
-  if( FD_UNLIKELY( service_interval < min_service_interval ) ) {
-    service_interval = quic->config.service_interval = min_service_interval;
-  }
-  return service_interval;
-}
-
 void
 fd_quic_reschedule_conn( fd_quic_conn_t * conn,
                          ulong            timeout ) {
@@ -1783,10 +1771,7 @@ fd_quic_reschedule_conn( fd_quic_conn_t * conn,
 
   ulong now = state->now;
 
-  ulong service_interval = fd_quic_get_service_interval( quic );
-
-  timeout = fd_ulong_min( timeout, now + service_interval );
-  timeout = fd_ulong_max( timeout, now + 1UL );
+  timeout = fd_ulong_max( timeout, now + 1UL ); /* ??? */
 
   /* scheduled? */
   if( conn->in_service ) {
@@ -2490,7 +2475,7 @@ fd_quic_service( fd_quic_t * quic ) {
     }
 
     /* set an initial next_service_time */
-    conn->next_service_time = now + fd_quic_get_service_interval( quic );
+    conn->next_service_time = ULONG_MAX;
 
     /* remove event, later reinserted at new time */
     service_queue_remove_min( state->service_queue );
