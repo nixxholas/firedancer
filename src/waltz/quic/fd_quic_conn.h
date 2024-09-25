@@ -63,7 +63,7 @@ struct fd_quic_conn {
   int                in_service;          /* whether the conn is in the service queue */
 
   /* we can have multiple connection ids */
-  ulong our_conn_id[ FD_QUIC_MAX_CONN_ID_PER_CONN ];
+  ulong              our_conn_id[ FD_QUIC_MAX_CONN_ID_PER_CONN ];
 
   /* Save original destination connection id
      This will be used when we receive a retransmitted initial packet

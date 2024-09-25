@@ -63,14 +63,6 @@ typedef struct {
   ulong       net_out_chunk;
 
   fd_wksp_t * verify_out_mem;
-
-  struct {
-    ulong legacy_reasm_append [ FD_METRICS_COUNTER_QUIC_TILE_NON_QUIC_REASSEMBLY_APPEND_CNT ];
-    ulong legacy_reasm_publish[ FD_METRICS_COUNTER_QUIC_TILE_NON_QUIC_REASSEMBLY_PUBLISH_CNT ];
-
-    ulong reasm_append [ FD_METRICS_COUNTER_QUIC_TILE_REASSEMBLY_APPEND_CNT ];
-    ulong reasm_publish[ FD_METRICS_COUNTER_QUIC_TILE_REASSEMBLY_PUBLISH_CNT ];
-  } metrics;
 } fd_quic_ctx_t;
 
 FD_FN_CONST static inline fd_quic_limits_t
@@ -119,23 +111,33 @@ legacy_receive( fd_quic_ctx_t * ctx,
                 uchar *         packet,
                 ulong           packet_sz ) {
 
+  if( FD_UNLIKELY( packet_sz>FD_TXN_MTU ) ) {
+    FD_MCNT_INC( QUIC_TILE, NON_QUIC_PACKET_TOO_LARGE, 1UL );
+    return;
+  }
+
   fd_mux_context_t * mux = ctx->mux;
 
   uint                  tsorig = (uint)fd_frag_meta_ts_comp( fd_tickcount() );
   fd_tpu_reasm_slot_t * slot   = fd_tpu_reasm_prepare( ctx->reasm, tsorig );
 
   int add_err = fd_tpu_reasm_append( ctx->reasm, slot, packet, packet_sz, 0UL );
-  ctx->metrics.legacy_reasm_append[ add_err ]++;
-  if( FD_UNLIKELY( add_err!=FD_TPU_REASM_SUCCESS ) ) return;
+  if( FD_UNLIKELY( add_err!=FD_TPU_REASM_SUCCESS ) ) {
+    FD_LOG_WARNING(( "fd_tpu_reasm_append failed (%d)", add_err ));
+    return;
+  }
 
   uint   tspub = (uint)fd_frag_meta_ts_comp( fd_tickcount() );
   void * base  = ctx->verify_out_mem;
   ulong  seq   = *mux->seq;
 
   int pub_err = fd_tpu_reasm_publish( ctx->reasm, slot, mux->mcache, base, seq, tspub );
-  ctx->metrics.legacy_reasm_publish[ pub_err ]++;
-  if( FD_UNLIKELY( pub_err!=FD_TPU_REASM_SUCCESS ) ) return;
+  if( FD_UNLIKELY( pub_err!=FD_TPU_REASM_SUCCESS ) ) {
+    FD_LOG_WARNING(( "fd_tpu_reasm_append failed (%d)", add_err ));
+    return;
+  }
 
+  FD_MCNT_INC( QUIC_TILE, NON_QUIC_TRANSACTION_RECEIVE, 1UL );
   fd_mux_advance( mux );
 }
 
@@ -169,11 +171,6 @@ before_credit( void *             _ctx,
 static inline void
 metrics_write( void * _ctx ) {
   fd_quic_ctx_t * ctx = (fd_quic_ctx_t *)_ctx;
-
-  FD_MCNT_ENUM_COPY( QUIC_TILE, NON_QUIC_REASSEMBLY_APPEND,  ctx->metrics.legacy_reasm_append );
-  FD_MCNT_ENUM_COPY( QUIC_TILE, NON_QUIC_REASSEMBLY_PUBLISH, ctx->metrics.legacy_reasm_publish );
-  FD_MCNT_ENUM_COPY( QUIC_TILE, REASSEMBLY_APPEND,           ctx->metrics.reasm_append );
-  FD_MCNT_ENUM_COPY( QUIC_TILE, REASSEMBLY_PUBLISH,          ctx->metrics.reasm_publish );
 
   FD_MCNT_SET(   QUIC, RECEIVED_PACKETS, ctx->quic->metrics.net_rx_pkt_cnt );
   FD_MCNT_SET(   QUIC, RECEIVED_BYTES,   ctx->quic->metrics.net_rx_byte_cnt );
@@ -341,9 +338,11 @@ quic_stream_receive(
 
   if( !slot ) {
     slot = fd_tpu_reasm_prepare( reasm, tsorig );
-  } else if( ( slot->conn_id   != conn_id   ) |
-             ( slot->stream_id != stream_id ) ) {
-    fd_tpu_reasm_cancel( reasm, slot );  /* FIXME double free? */
+  } else if( ( slot->conn_id   != conn_id                 ) |
+             ( slot->stream_id != stream_id               ) |
+             ( slot->state     != FD_TPU_REASM_STATE_BUSY ) ) {
+    FD_MCNT_INC( QUIC_TILE, QUIC_FRAGMENT_DROP, 1UL );
+    fd_tpu_reasm_cancel( reasm, slot );
     slot = fd_tpu_reasm_prepare( reasm, tsorig );
   }
   conn->context = slot;
@@ -351,8 +350,8 @@ quic_stream_receive(
   /* Append data (frags guaranteed in order) */
 
   int add_err = fd_tpu_reasm_append( reasm, slot, data, data_sz, offset );
-  ctx->metrics.reasm_append[ add_err ]++;
-  if( add_err ) {
+  if( FD_UNLIKELY( add_err ) ) {
+    FD_MCNT_INC( QUIC_TILE, QUIC_FRAGMENT_DROP, 1UL );
     conn->context = NULL;
     return;
   }
@@ -363,12 +362,16 @@ quic_stream_receive(
     ulong  seq     = *mux->seq;
     uint   tspub   = (uint)fd_frag_meta_ts_comp( fd_tickcount() );
     int    pub_err = fd_tpu_reasm_publish( reasm, slot, mcache, base, seq, tspub );
-    ctx->metrics.reasm_publish[ pub_err ]++;
-    fd_mux_advance( mux );
     conn->context = NULL;
+    if( FD_UNLIKELY( pub_err!=FD_TPU_REASM_SUCCESS ) ) {
+      FD_MCNT_INC( QUIC_TILE, QUIC_FRAGMENT_DROP, 1UL );
+      return;
+    }
+    fd_mux_advance( mux );
+    FD_MCNT_INC( QUIC_TILE, QUIC_TRANSACTION_RECEIVE, 1UL );
   }
 
-  return;
+  FD_MCNT_INC( QUIC_TILE, QUIC_FRAGMENT_RECEIVE, 1UL );
 }
 
 static int

@@ -1160,7 +1160,7 @@ fd_quic_handle_v1_initial( fd_quic_t *               quic,
       /* Allocate new conn */
 
       conn = fd_quic_conn_create( quic,
-          fd_ulong_load_8( new_conn_id.conn_id ),  /* our_conn_id */
+          new_conn_id_u64,
           &peer_conn_id,
           dst_ip_addr,
           dst_udp_port,
@@ -1204,6 +1204,7 @@ fd_quic_handle_v1_initial( fd_quic_t *               quic,
       fd_quic_gen_initial_secret_and_keys( conn, conn_id );
     } else {
       /* connection may have been torn down */
+      FD_DEBUG( FD_LOG_DEBUG(( "unknown connection ID" )); )
       return FD_QUIC_PARSE_FAIL;
     }
   }
@@ -1863,8 +1864,6 @@ fd_quic_process_quic_packet_v1( fd_quic_t *     quic,
       entry = fd_quic_conn_map_query( state->conn_map, fd_ulong_load_8( dst_conn_id.conn_id ), NULL );
       conn  = entry ? state->conns + entry->conn_idx : NULL;
     }
-
-    /* find connection id */
 
     /* encryption level matches that of TLS */
     pkt->enc_level = common_hdr->long_packet_type; /* V2 uses an indirect mapping */
@@ -3346,7 +3345,6 @@ fd_quic_conn_tx( fd_quic_t *      quic,
     /* payload_end leaves room for TAG */
     uchar * payload_end = payload_ptr + payload_sz - FD_QUIC_CRYPTO_TAG_SZ;
 
-    /* if we have acks, add them */
     uchar * const frame_start = payload_ptr;
     payload_ptr = fd_quic_gen_frames( conn, payload_ptr, payload_end, enc_level, pkt_meta, pkt_number, now );
     if( FD_UNLIKELY( payload_ptr < frame_start ) ) FD_LOG_CRIT(( "fd_quic_gen_frames failed" ));
@@ -3713,7 +3711,6 @@ fd_quic_connect( fd_quic_t *  quic,
   /* create conn ids for us and them
      client creates connection id for the peer, peer immediately replaces it */
   ulong our_conn_id_u64 = fd_rng_ulong( rng );
-  fd_quic_conn_id_t our_conn_id  = fd_quic_conn_id_new( &our_conn_id, sizeof(ulong) );
   fd_quic_conn_id_t peer_conn_id;  fd_quic_conn_id_rand( &peer_conn_id, rng );
 
   fd_quic_conn_t * conn = fd_quic_conn_create(
@@ -3770,7 +3767,7 @@ fd_quic_connect( fd_quic_t *  quic,
           conn->initial_source_conn_id.conn_id,
           FD_QUIC_MAX_CONN_ID_SZ );
   tp->initial_source_connection_id_present = 1;
-  tp->initial_source_connection_id_len     = our_conn_id.sz;
+  tp->initial_source_connection_id_len     = FD_QUIC_CONN_ID_SZ;
 
   /* validate transport parameters */
 

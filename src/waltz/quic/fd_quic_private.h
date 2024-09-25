@@ -299,8 +299,6 @@ fd_quic_handle_v1_one_rtt( fd_quic_t *      quic,
    incoming QUIC frames.  {quic,conn,pkt} identify the frame context.
    Memory region [frame_ptr,frame_ptr+frame_sz) contains the serialized
    QUIC frame (may contain arbitrary zero padding at the beginning).
-   frame_scratch is used as scratch space for deserialization and frame
-   handling.
 
    Returns value in (0,buf_sz) if the frame was successfully processed.
    Returns FD_QUIC_PARSE_FAIL if the frame was inherently malformed.
