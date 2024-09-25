@@ -937,7 +937,7 @@ fd_quic_handle_v1_initial( fd_quic_t *               quic,
 
   /* Parse initial packet */
 
-  fd_quic_initial_t initial[1];
+  fd_quic_initial_t initial[1] = {0};
   ulong rc = fd_quic_decode_initial( initial, cur_ptr, cur_sz );
   if( FD_UNLIKELY( rc == FD_QUIC_PARSE_FAIL ) ) {
     FD_DEBUG( FD_LOG_DEBUG(( "fd_quic_decode_initial failed" )) );
@@ -3214,7 +3214,7 @@ fd_quic_conn_tx( fd_quic_t *      quic,
   uchar *  crypt_scratch    = state->crypt_scratch;
   ulong    crypt_scratch_sz = sizeof( state->crypt_scratch );
 
-  fd_quic_pkt_hdr_t pkt_hdr;
+  fd_quic_pkt_hdr_t pkt_hdr = {0};
 
   uchar udp_buf[ 1500 ];
   ulong udp_sz = 0UL;
