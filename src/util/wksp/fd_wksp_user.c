@@ -575,6 +575,7 @@ fd_wksp_usage( fd_wksp_t *       wksp,
       fd_wksp_private_unlock( wksp );
       FD_LOG_WARNING(( "corrupt wksp detected" ));
       fd_memset( usage, 0, sizeof(fd_wksp_usage_t) );
+      return usage;
     }
     pinfo[ i ].cycle_tag = cycle_tag; /* mark i as visited */
 
