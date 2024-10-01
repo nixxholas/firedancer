@@ -101,10 +101,7 @@ struct fd_ledger_args {
   fd_exec_epoch_ctx_t * epoch_ctx;               /* epoch_ctx */
   fd_tpool_t *          tpool;                   /* thread pool for execution */
   uchar                 tpool_mem[FD_TPOOL_FOOTPRINT( FD_TILE_MAX )] __attribute__( ( aligned( FD_TPOOL_ALIGN ) ) );
-  #ifdef _ENABLE_LTHASH
-  char const *      lthash;
-  #endif
-
+  char const *          lthash;
 };
 typedef struct fd_ledger_args fd_ledger_args_t;
 
@@ -900,12 +897,10 @@ ingest( fd_ledger_args_t * args ) {
     }
   }
 
-  #ifdef _ENABLE_LTHASH
-    if( (NULL != args->lthash) && ( strcmp( args->lthash, "true" ) == 0) ) {
-      fd_accounts_init_lthash( slot_ctx );
-      fd_accounts_check_lthash( slot_ctx );
-    }
-  #endif
+  if( (NULL != args->lthash) && ( strcmp( args->lthash, "true" ) == 0) ) {
+    fd_accounts_init_lthash( slot_ctx );
+    fd_accounts_check_lthash( slot_ctx );
+  }
 
   checkpt( args, slot_ctx );
 
@@ -1339,10 +1334,7 @@ initial_setup( int argc, char ** argv, fd_ledger_args_t * args ) {
   uint         cluster_version         = fd_env_strip_cmdline_uint ( &argc, &argv, "--cluster-version",         NULL, FD_DEFAULT_AGAVE_CLUSTER_VERSION );
   char const * checkpt_status_cache    = fd_env_strip_cmdline_cstr ( &argc, &argv, "--checkpt-status-cache",    NULL, NULL      );
   char const * one_off_features        = fd_env_strip_cmdline_cstr ( &argc, &argv, "--one-off-features",        NULL, NULL      );
-
-  #ifdef _ENABLE_LTHASH
-  char const * lthash             = fd_env_strip_cmdline_cstr ( &argc, &argv, "--lthash",           NULL, "false"   );
-  #endif
+  char const * lthash                  = fd_env_strip_cmdline_cstr ( &argc, &argv, "--lthash",                  NULL, "false"   );
 
   // TODO: Add argument validation. Make sure that we aren't including any arguments that aren't parsed for
 
@@ -1467,9 +1459,7 @@ initial_setup( int argc, char ** argv, fd_ledger_args_t * args ) {
     }
   }
 
-  #ifdef _ENABLE_LTHASH
   args->lthash           = lthash;
-  #endif
 
   return 0;
 }
