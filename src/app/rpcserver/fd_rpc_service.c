@@ -76,6 +76,7 @@ struct fd_rpc_acct_map_elem {
   fd_pubkey_t key;
   ulong next;
   ulong slot;
+  ulong age;
   uchar sig[64U]; /* Transaction signature */
 };
 typedef struct fd_rpc_acct_map_elem fd_rpc_acct_map_elem_t;
@@ -110,6 +111,7 @@ struct fd_rpc_global_ctx {
   fd_stake_ci_t * stake_ci;
   fd_rpc_acct_map_t * acct_map;
   fd_rpc_acct_map_elem_t * acct_pool;
+  ulong acct_age;
 };
 typedef struct fd_rpc_global_ctx fd_rpc_global_ctx_t;
 
@@ -2404,6 +2406,27 @@ fd_webserver_ws_closed(ulong conn_id, void * cb_arg) {
 }
 
 void
+fd_rpc_acct_map_purge( fd_rpc_global_ctx_t * glob ) {
+  fd_rpc_acct_map_private_t * map = fd_rpc_acct_map_private( glob->acct_map );
+  fd_rpc_acct_map_elem_t * pool = glob->acct_pool;
+  ulong thresh = glob->acct_age - FD_RPC_ACCT_MAP_POOL_SIZE/3U;
+  ulong * chain = fd_rpc_acct_map_private_chain( map );
+  for( ulong i = 0; i < map->chain_cnt; ++i ) {
+    ulong * idx_ptr = &chain[i];
+    ulong idx;
+    while( !fd_rpc_acct_map_private_idx_is_null( idx = *idx_ptr ) ) {
+      fd_rpc_acct_map_elem_t * ele = pool + idx;
+      if( ele->age < thresh ) {
+        *idx_ptr = ele->next;
+        fd_rpc_acct_map_pool_ele_release( pool, ele );
+      } else {
+        idx_ptr = &ele->next;
+      }
+    }
+  }
+}
+
+void
 replay_sham_link_during_frag( fd_rpc_ctx_t * ctx, fd_replay_notif_msg_t * state, void const * msg, int sz ) {
   (void)ctx;
   FD_TEST( sz == (int)sizeof(fd_replay_notif_msg_t) );
@@ -2463,13 +2486,15 @@ replay_sham_link_after_frag(fd_rpc_ctx_t * ctx, fd_replay_notif_msg_t * msg) {
     for( uint i = 0; i < msg->accts.accts_cnt; ++i ) {
       fd_pubkey_t id;
       memcpy( &id, &msg->accts.accts[i].id, sizeof(id) );
-      if( FD_LIKELY( fd_rpc_acct_map_pool_free( subs->acct_pool ) ) ) {
-        fd_rpc_acct_map_elem_t * ele = fd_rpc_acct_map_pool_ele_acquire( subs->acct_pool );
-        fd_memcpy( &ele->key, &id, sizeof( ele->key ) );
-        ele->slot = msg->accts.funk_xid.ul[0];
-        fd_memcpy( ele->sig, msg->accts.sig, sizeof( ele->sig ) );
-        fd_rpc_acct_map_ele_insert( subs->acct_map, ele, subs->acct_pool );
+      if( FD_UNLIKELY( fd_rpc_acct_map_pool_free( subs->acct_pool ) == 0 ) ) {
+        fd_rpc_acct_map_purge( subs );
       }
+      fd_rpc_acct_map_elem_t * ele = fd_rpc_acct_map_pool_ele_acquire( subs->acct_pool );
+      fd_memcpy( &ele->key, &id, sizeof( ele->key ) );
+      ele->slot = msg->accts.funk_xid.ul[0];
+      ele->age = subs->acct_age++;
+      fd_memcpy( ele->sig, msg->accts.sig, sizeof( ele->sig ) );
+      fd_rpc_acct_map_ele_insert( subs->acct_map, ele, subs->acct_pool );
 
       if( ( msg->accts.accts[i].flags & FD_REPLAY_NOTIF_ACCT_WRITTEN ) ) {
         for( ulong j = 0; j < subs->sub_cnt; ++j ) {
