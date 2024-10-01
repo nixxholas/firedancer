@@ -173,50 +173,10 @@ get_slot_from_commitment_level( struct json_values * values, fd_rpc_ctx_t * ctx 
   }
 }
 
-fd_slot_bank_t *
-read_root_bank( fd_rpc_ctx_t * ctx, fd_valloc_t valloc ) {
-  fd_funk_rec_key_t recid = fd_runtime_slot_bank_key();
-  ulong vallen;
-
-  fd_funk_t * funk = ctx->global->funk;
-
-  void * val = fd_funk_rec_query_safe(funk, &recid, valloc, &vallen);
-  if( FD_UNLIKELY( !val ) ) {
-    FD_LOG_WARNING(( "failed to decode slot_bank" ));
-    return NULL;
-  }
-  uint magic = *(uint*)val;
-  fd_slot_bank_t * slot_bank = fd_valloc_malloc( valloc, fd_slot_bank_align(), fd_slot_bank_footprint() );
-  fd_slot_bank_new( slot_bank );
-  fd_bincode_decode_ctx_t binctx;
-  binctx.data = (uchar*)val + sizeof(uint);
-  binctx.dataend = (uchar*)val + vallen;
-  binctx.valloc  = valloc;
-  if( magic == FD_RUNTIME_ENC_BINCODE ) {
-    if( fd_slot_bank_decode( slot_bank, &binctx )!=FD_BINCODE_SUCCESS ) {
-      FD_LOG_WARNING(( "failed to decode slot_bank" ));
-      fd_valloc_free( valloc, val );
-      return NULL;
-    }
-  } else if( magic == FD_RUNTIME_ENC_ARCHIVE ) {
-    if( fd_slot_bank_decode_archival( slot_bank, &binctx )!=FD_BINCODE_SUCCESS ) {
-      FD_LOG_WARNING(( "failed to decode slot_bank" ));
-      fd_valloc_free( valloc, val );
-      return NULL;
-    }
-  } else {
-    FD_LOG_ERR(( "failed to read banks record: invalid magic number" ));
-  }
-  fd_valloc_free( valloc, val );
-  return slot_bank;
-}
-
 /* LEAVES THE LOCK IN READ MODE */
 fd_epoch_bank_t *
 read_epoch_bank( fd_rpc_ctx_t * ctx, ulong slot, fd_valloc_t valloc ) {
   fd_rpc_global_ctx_t * glob = ctx->global;
-  // fd_slot_bank_t *      root_bank = read_root_bank( ctx, valloc );
-  // FD_LOG_NOTICE( ( "funk root is %lu", root_bank->slot ) );
 
   for(;;) FD_SCRATCH_SCOPE_BEGIN {
     if( glob->epoch_bank != NULL &&
@@ -1403,10 +1363,17 @@ method_getStakeMinimumDelegation(struct json_values* values, fd_rpc_ctx_t * ctx)
 // TODO
 static int
 method_getSupply(struct json_values* values, fd_rpc_ctx_t * ctx) {
-  (void)values;
-  fd_webserver_t * ws = &ctx->global->ws;
-  fd_web_reply_sprintf( ws, "{\"jsonrpc\":\"2.0\",\"result\":{\"context\":{\"apiVersion\":\"" FIREDANCER_VERSION "\",\"slot\":%lu},\"value\":{\"circulating\":1,\"nonCirculating\":1,\"nonCirculatingAccounts\":[],\"total\":2}},\"id\":%s}",
-                        ctx->global->last_slot_notify.slot_exec.slot, ctx->call_id);
+  FD_SCRATCH_SCOPE_BEGIN { /* read_epoch consumes a ton of scratch space! */
+    ulong                 slot      = get_slot_from_commitment_level( values, ctx );
+    fd_slot_bank_t *      slot_bank = read_slot_bank( ctx, slot, fd_scratch_virtual() );
+    if( FD_UNLIKELY( !slot_bank ) ) {
+      fd_method_error( ctx, -1, "slot bank %lu not found", slot );
+      return 0;
+    }
+    fd_webserver_t * ws = &ctx->global->ws;
+    fd_web_reply_sprintf( ws, "{\"jsonrpc\":\"2.0\",\"result\":{\"context\":{\"apiVersion\":\"" FIREDANCER_VERSION "\",\"slot\":%lu},\"value\":{\"circulating\":%lu,\"nonCirculating\":%lu,\"nonCirculatingAccounts\":[],\"total\":%lu}},\"id\":%s}",
+                          ctx->global->last_slot_notify.slot_exec.slot, slot_bank->capitalization, 0UL, slot_bank->capitalization, ctx->call_id);
+  } FD_SCRATCH_SCOPE_END;
   return 0;
 }
 
@@ -1602,13 +1569,13 @@ method_getVersion(struct json_values* values, fd_rpc_ctx_t * ctx) {
 
 static void
 vote_account_to_json(fd_webserver_t * ws, fd_vote_accounts_pair_t_mapnode_t const * vote_node) {
-  char owner[50];
-  fd_base58_encode_32(vote_node->elem.value.owner.uc, 0, owner);
+  char pubkey[50];
+  fd_base58_encode_32(vote_node->elem.value.node_pubkey.uc, 0, pubkey);
   char key[50];
   fd_base58_encode_32(vote_node->elem.key.uc, 0, key);
   // TODO: epochCredits and lastVote
-  fd_web_reply_sprintf(ws, "{\"commission\":0,\"epochVoteAccount\":true,\"epochCredits\":[],\"nodePubkey\":\"%s\",\"lastVote\":%lu,\"activatedStake\":%lu,\"votePubkey\":\"%s\"}",
-                       owner, vote_node->elem.value.last_timestamp_slot, vote_node->elem.value.lamports, key);
+  fd_web_reply_sprintf(ws, "{\"commission\":0,\"epochVoteAccount\":true,\"epochCredits\":[],\"nodePubkey\":\"%s\",\"lastVote\":%lu,\"activatedStake\":%lu,\"votePubkey\":\"%s\",\"rootSlot\":0}",
+                       pubkey, vote_node->elem.value.last_timestamp_slot, vote_node->elem.stake, key);
 }
 
 // Implementation of the "getVoteAccounts" methods
@@ -1645,6 +1612,7 @@ method_getVoteAccounts(struct json_values* values, fd_rpc_ctx_t * ctx) {
       for( fd_vote_accounts_pair_t_mapnode_t const * n = fd_vote_accounts_pair_t_map_minimum_const( pool, root );
            n;
            n = fd_vote_accounts_pair_t_map_successor_const( pool, n ) ) {
+        if( n->elem.stake == 0 ) continue;
         if( needcomma ) fd_web_reply_sprintf(ws, ",");
         vote_account_to_json(ws, n);
         needcomma = 1;
