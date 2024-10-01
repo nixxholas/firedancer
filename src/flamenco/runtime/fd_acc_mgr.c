@@ -107,7 +107,7 @@ fd_acc_mgr_view_raw( fd_acc_mgr_t *         acc_mgr,
   fd_funk_rec_key_t id   = fd_acc_funk_key( pubkey );
   fd_funk_t *       funk = acc_mgr->funk;
 
-  fd_funk_rec_t const * rec = fd_funk_rec_query_global( funk, txn, &id );
+  fd_funk_rec_t const * rec = fd_funk_rec_query_global( funk, txn, &id, NULL );
 
   if( FD_UNLIKELY( !rec || !!( rec->flags & FD_FUNK_REC_FLAG_ERASE ) ) )  {
     fd_int_store_if( !!opt_err, opt_err, FD_ACC_MGR_ERR_UNKNOWN_ACCOUNT );

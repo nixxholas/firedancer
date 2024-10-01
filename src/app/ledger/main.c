@@ -1169,7 +1169,7 @@ prune( fd_ledger_args_t * args ) {
   for( const fd_funk_rec_t * rec = fd_funk_txn_rec_head( prune_txn, rec_map );
        rec; rec = fd_funk_txn_next_rec( pruned_funk, rec ) ) {
 
-    const fd_funk_rec_t * original_rec = fd_funk_rec_query_global( unpruned_funk, NULL, rec->pair.key );
+    const fd_funk_rec_t * original_rec = fd_funk_rec_query_global( unpruned_funk, NULL, rec->pair.key, NULL );
     if( original_rec != NULL ) {
       txn_rec_cnt++;
       fd_funk_rec_t * mod_rec = fd_funk_rec_modify( pruned_funk, rec );
@@ -1194,7 +1194,7 @@ prune( fd_ledger_args_t * args ) {
 
     fd_pubkey_t const *   pubkey      = (fd_pubkey_t *) id->id.key;
     fd_funk_rec_key_t     feature_id  = fd_acc_funk_key( pubkey );
-    fd_funk_rec_t const * feature_rec = fd_funk_rec_query_global( unpruned_funk, NULL, &feature_id );
+    fd_funk_rec_t const * feature_rec = fd_funk_rec_query_global( unpruned_funk, NULL, &feature_id, NULL );
     if( !feature_rec ) {
       continue;
     }
@@ -1231,7 +1231,7 @@ prune( fd_ledger_args_t * args ) {
                                     slot_hashes, epoch_schedule, epoch_rewards, sysvar_fees, rent,
                                     stake_history, owner, last_restart_slot, instructions, incinerator };
   for( uint i = 0; i < sizeof( records ) / sizeof( fd_funk_rec_key_t ); ++i ) {
-    fd_funk_rec_t const * original_rec = fd_funk_rec_query_global( unpruned_funk, NULL, &records[i] );
+    fd_funk_rec_t const * original_rec = fd_funk_rec_query_global( unpruned_funk, NULL, &records[i], NULL );
     if( !original_rec ) {
       /* Some sysvars aren't touched during execution. Not a problem. */
       FD_LOG_DEBUG(("Record is not in account pubkey=%32J at index=%lu", &records[i], i));
