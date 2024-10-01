@@ -2343,8 +2343,8 @@ fd_rpc_start_service(fd_rpcserver_args_t * args, fd_rpc_ctx_t ** ctx_p) {
     }
     memcpy( &gctx->tpu_addr, &args->tpu_addr, sizeof(struct sockaddr_in) );
 
-    void * mem = fd_valloc_malloc( valloc, fd_rpc_acct_map_align(), fd_rpc_acct_map_footprint( FD_RPC_ACCT_MAP_POOL_SIZE*2 ) );
-    gctx->acct_map = fd_rpc_acct_map_join( fd_rpc_acct_map_new( mem, FD_RPC_ACCT_MAP_POOL_SIZE*2, 0 ) );
+    void * mem = fd_valloc_malloc( valloc, fd_rpc_acct_map_align(), fd_rpc_acct_map_footprint( FD_RPC_ACCT_MAP_POOL_SIZE/2 ) );
+    gctx->acct_map = fd_rpc_acct_map_join( fd_rpc_acct_map_new( mem, FD_RPC_ACCT_MAP_POOL_SIZE/2, 0 ) );
     mem = fd_valloc_malloc( valloc, fd_rpc_acct_map_pool_align(), fd_rpc_acct_map_pool_footprint( FD_RPC_ACCT_MAP_POOL_SIZE ) );
     gctx->acct_pool = fd_rpc_acct_map_pool_join( fd_rpc_acct_map_pool_new( mem, FD_RPC_ACCT_MAP_POOL_SIZE ) );
 
