@@ -1642,7 +1642,9 @@ method_getVoteAccounts(struct json_values* values, fd_rpc_ctx_t * ctx) {
       }
     }
 
-    fd_web_reply_sprintf(ws, "],\"delinquent\":[]},\"id\":%s}" CRLF, ctx->call_id);
+    /* The solana explorer doesn't like empty delinquent arrays */
+    const char * placeholder = "{\"commission\":0,\"epochVoteAccount\":true,\"epochCredits\":[],\"nodePubkey\":\"H7J9jvU7Y4BNd6knCtyPPhYWAmtZmyWTAV5pzMwSWY7e\",\"lastVote\":295581571,\"activatedStake\":1,\"votePubkey\":\"2FkLrELBHBSVEFCUd9W4sYNt1g9DY1W5SuSm2HXsHf1B\",\"rootSlot\":0}";
+    fd_web_reply_sprintf(ws, "],\"delinquent\":[%s]},\"id\":%s}" CRLF, placeholder, ctx->call_id);
   } FD_SCRATCH_SCOPE_END;
   return 0;
 }
