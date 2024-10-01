@@ -2405,7 +2405,7 @@ fd_webserver_ws_closed(ulong conn_id, void * cb_arg) {
   }
 }
 
-void
+static void
 fd_rpc_acct_map_purge( fd_rpc_global_ctx_t * glob ) {
   fd_rpc_acct_map_private_t * map = fd_rpc_acct_map_private( glob->acct_map );
   fd_rpc_acct_map_elem_t * pool = glob->acct_pool;
