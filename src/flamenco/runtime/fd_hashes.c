@@ -314,7 +314,7 @@ fd_account_hash_task( void *tpool,
   fd_exec_slot_ctx_t * slot_ctx = task_info->slot_ctx;
   int err = 0;
   fd_funk_txn_t const * txn_out = NULL;
-  fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, slot_ctx->funk_txn, task_info->acc_pubkey, &task_info->rec, &err /*, &txn_out */);
+  fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, slot_ctx->funk_txn, task_info->acc_pubkey, &task_info->rec, &err, /*&txn_out*/ NULL );
   if( FD_UNLIKELY( err!=FD_ACC_MGR_SUCCESS ) ) {
     FD_LOG_WARNING(( "failed to view account during bank hash" ));
     return;
@@ -326,7 +326,7 @@ fd_account_hash_task( void *tpool,
     fd_wksp_t *     wksp = fd_funk_wksp( funk );
     fd_funk_txn_t * txn_map  = fd_funk_txn_map( funk, wksp );
     txn_out = fd_funk_txn_parent( (fd_funk_txn_t *) txn_out, txn_map );
-    acc_meta_parent = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, txn_out, task_info->acc_pubkey, &task_info->rec, &err /*, NULL */);
+    acc_meta_parent = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, txn_out, task_info->acc_pubkey, &task_info->rec, &err, NULL);
   }
 
   fd_lthash_value_t * acc = &(((fd_accounts_hash_task_data_t *)tpool)->lthash_values[t0]);
@@ -496,7 +496,7 @@ fd_update_hash_bank_tpool( fd_exec_slot_ctx_t * slot_ctx,
         acc_rec->meta->dlen ));
 
     if( capture_ctx != NULL && capture_ctx->capture != NULL ) {
-      fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, slot_ctx->funk_txn, task_info->acc_pubkey, &task_info->rec, &err);
+      fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( slot_ctx->acc_mgr, slot_ctx->funk_txn, task_info->acc_pubkey, &task_info->rec, &err, NULL);
       if( FD_UNLIKELY( err!=FD_ACC_MGR_SUCCESS ) ) {
         FD_LOG_WARNING(( "failed to view account during capture" ));
         continue;
@@ -620,7 +620,7 @@ fd_print_account_hashes( fd_exec_slot_ctx_t * slot_ctx,
     // char encoded_owner[50];
     // fd_base58_encode_32((uchar *) &current_owner, 0, encoded_owner);
     int err = FD_ACC_MGR_SUCCESS;
-    uchar * raw_acc_data = (uchar*) fd_acc_mgr_view_raw(slot_ctx->acc_mgr, slot_ctx->funk_txn, dirty_keys[i].pubkey, NULL, &err);
+    uchar * raw_acc_data = (uchar*) fd_acc_mgr_view_raw(slot_ctx->acc_mgr, slot_ctx->funk_txn, dirty_keys[i].pubkey, NULL, &err, NULL);
     if (NULL != raw_acc_data) {
 
       fd_account_meta_t * metadata = (fd_account_meta_t *)raw_acc_data;
@@ -698,7 +698,7 @@ fd_update_hash_bank( fd_exec_slot_ctx_t * slot_ctx,
     fd_funk_rec_t const *     rec      = NULL;
 
     int           err = 0;
-    fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( acc_mgr, txn, acc_key, &rec, &err);
+    fd_account_meta_t const * acc_meta = fd_acc_mgr_view_raw( acc_mgr, txn, acc_key, &rec, &err, NULL);
     if( FD_UNLIKELY( err!=FD_ACC_MGR_SUCCESS ) ) {
       FD_LOG_ERR(( "failed to view account during bank hash" ));
     }

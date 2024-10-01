@@ -158,7 +158,7 @@ _load_account( fd_borrowed_account_t *           acc,
   fd_pubkey_t pubkey[1];  memcpy( pubkey, state->address, sizeof(fd_pubkey_t) );
 
   /* Account must not yet exist */
-  if( FD_UNLIKELY( fd_acc_mgr_view_raw( acc_mgr, funk_txn, pubkey, NULL, NULL) ) )
+  if( FD_UNLIKELY( fd_acc_mgr_view_raw( acc_mgr, funk_txn, pubkey, NULL, NULL, NULL) ) )
     return 0;
 
   assert( acc_mgr->funk );
