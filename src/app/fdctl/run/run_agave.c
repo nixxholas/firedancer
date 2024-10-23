@@ -69,7 +69,7 @@ agave_boot( config_t * config ) {
   if( strcmp( config->consensus.vote_account_path, "" ) )
     ADD( "--vote-account", config->consensus.vote_account_path );
   else
-    ADD1( "--no-voting" )
+    ADD1( "--no-voting" );
   for( ulong i=0UL; i<config->consensus.authorized_voter_paths_cnt; i++ )
     ADD( "--authorized-voter", config->consensus.authorized_voter_paths[ i ] );
   if( !config->consensus.snapshot_fetch ) ADD1( "--no-snapshot-fetch" );
