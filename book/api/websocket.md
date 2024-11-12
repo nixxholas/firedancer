@@ -920,11 +920,18 @@ are skipped on the currently active fork.
 #### `slot.update`
 | frequency   | type          | example |
 |-------------|---------------|---------|
-| *Live*      | `SlotPublish` | below   |
+| *Live*      | `SlotUpdate`  | below   |
 
 :::details Example
 
 :::
+
+**`SlotUpdate`**
+| Field               | Type                      | Description |
+|---------------------|---------------------------|-------------|
+| publish             | `SlotPublish`             | General information about the slot |
+| waterfall           | `TxnWaterfall\|null`      | If the slot is not `mine`, will be `null`. Otherwise, a waterfall showing reasons transactions were acquired since the end of the prior leader slot |
+| tile_primary_metric | `TilePrimaryMetric\|null` | If the slot is not `mine`, will be `null`. Otherwise, per-tile-type primary metrics since the end of the prior leader slot |
 
 #### `slot.query`
 | frequency   | type           | example |
@@ -980,7 +987,8 @@ are skipped on the currently active fork.
                 "verify_parse": 0,
                 "verify_failed": 0,
                 "verify_duplicate": 114,
-                "dedup_duplicate": 19387,
+                "dedup_duplicate": 19384,
+                "resolv_failed": 3,
                 "pack_invalid": 0,
                 "pack_expired": 0,
                 "pack_retained": 2225,
@@ -1058,7 +1066,7 @@ are skipped on the currently active fork.
 | publish             | `SlotPublish`             | General information about the slot |
 | waterfall           | `TxnWaterfall\|null`      | If the slot is not `mine`, will be `null`. Otherwise, a waterfall showing reasons transactions were acquired since the end of the prior leader slot |
 | tile_primary_metric | `TilePrimaryMetric\|null` | If the slot is not `mine`, will be `null`. Otherwise, per-tile-type primary metrics since the end of the prior leader slot |
-| tile_timers         | `TsTileTimers[]\|null`    | If the slot is not `mine`, will be `null`. Otherwise, an array of `TsTileTimers` samples from the slot, sorted earliest to latest |
+| tile_timers         | `TsTileTimers[]\|null`    | If the slot is not `mine`, will be `null`. Otherwise, an array of `TsTileTimers` samples from the slot, sorted earliest to latest. We store this information for the most recently completed 4096 leader slots. This will be `null` for leader slots before that |
 
 **`TxnWaterfall`**
 | Field | Type              | Description |
@@ -1086,6 +1094,7 @@ are skipped on the currently active fork.
 | verify_failed     | `number` | Transactions were dropped because signature verification failed |
 | verify_duplicate  | `number` | Transactions were dropped because the verify tiles determined that they had already been processed |
 | dedup_duplicate   | `number` | Transactions were dropped because the dedup tile determined that they had already been processed |
+| resolv_failed     | `number` | Transactions were dropped because they contained invalid address lookup tables (LUTs) |
 | pack_invalid      | `number` | Transactions were dropped because pack determined they would never execute. Reasons can include the transaction requested too many compute units, or was too large to fit in a block |
 | pack_expired      | `number` | Transactions were dropped because pack determined that their TTL expired |
 | pack_retained     | `number` | Transactions were retained inside the validator memory because they were not high enough priority to make it into a prior block we produced, but have not yet expired. We might include the transactions in a future block |

@@ -6,11 +6,14 @@
 #include "context/fd_exec_instr_ctx.h"
 #include "../../ballet/block/fd_microblock.h"
 #include "../../ballet/pack/fd_microblock.h"
+#include "../../ballet/txn/fd_txn.h"
 #include "../../ballet/poh/fd_poh.h"
 #include "../types/fd_types_yaml.h"
 #include "../log_collector/fd_log_collector.h"
 #include "tests/generated/invoke.pb.h"
 #include "tests/generated/txn.pb.h"
+#include "../features/fd_features.h"
+#include "fd_runtime.h"
 
 /* FD_EXEC_CU_UPDATE consumes CUs from the current instr ctx
    and fails in case of error. */
@@ -21,6 +24,12 @@
   } while(0)
 
 FD_PROTOTYPES_BEGIN
+
+/* https://github.com/anza-xyz/agave/blob/v2.0.9/runtime/src/bank.rs#L3239-L3251 */
+static inline ulong
+get_transaction_account_lock_limit( fd_exec_slot_ctx_t const * slot_ctx ) {
+  return fd_ulong_if( FD_FEATURE_ACTIVE( slot_ctx, increase_tx_account_lock_limit ), MAX_TX_ACCOUNT_LOCKS, 64UL );
+}
 
 /* Create an InstrContext protobuf struct from a given 
    transaction context and instr info. 
@@ -111,7 +120,8 @@ fd_executor_is_system_nonce_account( fd_borrowed_account_t * account );
  */
 
 int
-fd_executor_txn_check( fd_exec_slot_ctx_t * slot_ctx,  fd_exec_txn_ctx_t *txn );
+fd_executor_txn_check( fd_exec_slot_ctx_t const * slot_ctx, 
+                       fd_exec_txn_ctx_t *        txn );
 
 void
 fd_txn_reclaim_accounts( fd_exec_txn_ctx_t * txn_ctx );
@@ -150,6 +160,16 @@ fd_exec_consume_cus( fd_exec_txn_ctx_t * txn_ctx,
 
 void
 dump_txn_to_protobuf( fd_exec_txn_ctx_t *txn_ctx, fd_spad_t * spad );
+
+/* We expose these only for the fuzzing harness.
+   Normally you shouldn't be invoking these manually. */
+int
+fd_instr_stack_push( fd_exec_txn_ctx_t *     txn_ctx,
+                     fd_instr_info_t *       instr );
+
+int
+fd_instr_stack_pop( fd_exec_txn_ctx_t *       txn_ctx,
+                    fd_instr_info_t const *   instr );
 
 FD_PROTOTYPES_END
 

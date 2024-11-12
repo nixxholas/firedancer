@@ -1248,6 +1248,7 @@ typedef struct fd_reward_info_off fd_reward_info_off_t;
 #define FD_REWARD_INFO_OFF_FOOTPRINT sizeof(fd_reward_info_off_t)
 #define FD_REWARD_INFO_OFF_ALIGN (8UL)
 
+/* You can cast this to a (fd_lthash_value_t *) and use it directly since the alignment is preserved */
 /* Encoded Size: Fixed (2048 bytes) */
 struct __attribute__((aligned(128UL))) fd_slot_lthash {
   uchar lthash[2048];
@@ -4020,14 +4021,14 @@ typedef struct fd_gossip_node_instance_off fd_gossip_node_instance_off_t;
 
 /* Encoded Size: Dynamic */
 struct __attribute__((aligned(8UL))) fd_gossip_duplicate_shred {
-  ushort version;
+  ushort duplicate_shred_index;
   fd_pubkey_t from;
   ulong wallclock;
   ulong slot;
-  uint shred_index;
-  uchar shred_variant;
-  uchar chunk_cnt;
-  uchar chunk_idx;
+  uint _unused;
+  uchar _unused_shred_type;
+  uchar num_chunks;
+  uchar chunk_index;
   ulong chunk_len;
   uchar* chunk;
 };
@@ -4036,14 +4037,14 @@ typedef struct fd_gossip_duplicate_shred fd_gossip_duplicate_shred_t;
 #define FD_GOSSIP_DUPLICATE_SHRED_ALIGN (8UL)
 
 struct __attribute__((aligned(8UL))) fd_gossip_duplicate_shred_off {
-  uint version_off;
+  uint duplicate_shred_index_off;
   uint from_off;
   uint wallclock_off;
   uint slot_off;
-  uint shred_index_off;
-  uint shred_variant_off;
-  uint chunk_cnt_off;
-  uint chunk_idx_off;
+  uint _unused_off;
+  uint _unused_shred_type_off;
+  uint num_chunks_off;
+  uint chunk_index_off;
   uint chunk_off;
 };
 typedef struct fd_gossip_duplicate_shred_off fd_gossip_duplicate_shred_off_t;
@@ -4685,6 +4686,26 @@ struct __attribute__((aligned(8UL))) fd_calculated_stake_rewards_off {
 typedef struct fd_calculated_stake_rewards_off fd_calculated_stake_rewards_off_t;
 #define FD_CALCULATED_STAKE_REWARDS_OFF_FOOTPRINT sizeof(fd_calculated_stake_rewards_off_t)
 #define FD_CALCULATED_STAKE_REWARDS_OFF_ALIGN (8UL)
+
+/* https://github.com/anza-xyz/agave/blob/v2.0.3/ledger/src/blockstore_meta.rs#L150-L156 */
+/* Encoded Size: Dynamic */
+struct __attribute__((aligned(8UL))) fd_duplicate_slot_proof {
+  ulong shred1_len;
+  uchar* shred1;
+  ulong shred2_len;
+  uchar* shred2;
+};
+typedef struct fd_duplicate_slot_proof fd_duplicate_slot_proof_t;
+#define FD_DUPLICATE_SLOT_PROOF_FOOTPRINT sizeof(fd_duplicate_slot_proof_t)
+#define FD_DUPLICATE_SLOT_PROOF_ALIGN (8UL)
+
+struct __attribute__((aligned(8UL))) fd_duplicate_slot_proof_off {
+  uint shred1_off;
+  uint shred2_off;
+};
+typedef struct fd_duplicate_slot_proof_off fd_duplicate_slot_proof_off_t;
+#define FD_DUPLICATE_SLOT_PROOF_OFF_FOOTPRINT sizeof(fd_duplicate_slot_proof_off_t)
+#define FD_DUPLICATE_SLOT_PROOF_OFF_ALIGN (8UL)
 
 
 FD_PROTOTYPES_BEGIN
@@ -7893,6 +7914,18 @@ void fd_calculated_stake_rewards_walk( void * w, fd_calculated_stake_rewards_t c
 ulong fd_calculated_stake_rewards_size( fd_calculated_stake_rewards_t const * self );
 ulong fd_calculated_stake_rewards_footprint( void );
 ulong fd_calculated_stake_rewards_align( void );
+
+void fd_duplicate_slot_proof_new( fd_duplicate_slot_proof_t * self );
+int fd_duplicate_slot_proof_decode( fd_duplicate_slot_proof_t * self, fd_bincode_decode_ctx_t * ctx );
+int fd_duplicate_slot_proof_decode_preflight( fd_bincode_decode_ctx_t * ctx );
+void fd_duplicate_slot_proof_decode_unsafe( fd_duplicate_slot_proof_t * self, fd_bincode_decode_ctx_t * ctx );
+int fd_duplicate_slot_proof_decode_offsets( fd_duplicate_slot_proof_off_t * self, fd_bincode_decode_ctx_t * ctx );
+int fd_duplicate_slot_proof_encode( fd_duplicate_slot_proof_t const * self, fd_bincode_encode_ctx_t * ctx );
+void fd_duplicate_slot_proof_destroy( fd_duplicate_slot_proof_t * self, fd_bincode_destroy_ctx_t * ctx );
+void fd_duplicate_slot_proof_walk( void * w, fd_duplicate_slot_proof_t const * self, fd_types_walk_fn_t fun, const char *name, uint level );
+ulong fd_duplicate_slot_proof_size( fd_duplicate_slot_proof_t const * self );
+ulong fd_duplicate_slot_proof_footprint( void );
+ulong fd_duplicate_slot_proof_align( void );
 
 FD_PROTOTYPES_END
 

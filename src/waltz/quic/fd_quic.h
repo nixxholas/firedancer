@@ -81,6 +81,7 @@
 
 /* TODO provide fd_quic on non-hosted targets */
 
+#include "fd_quic_common.h"
 #include "fd_quic_enum.h"
 
 #include "../aio/fd_aio.h"
@@ -137,23 +138,24 @@ struct __attribute__((aligned(16UL))) fd_quic_config {
   /* role: one of FD_QUIC_ROLE_{CLIENT,SERVER} */
   int role;
 
-  /* service_interval: time interval in ns for background services
-     (sending ACKs).  Caller should introduce additional jitter in
-     event loop. */
-  /* TODO are there any other duties than ACKs? */
-  ulong service_interval;
-
-  /* ping_interval: inactivity time in ns before sending a
-     ping request to peer. */
-  /* TODO unused for now */
-  ulong ping_interval;
-
-  /* idle_timeout: time in ns before timing out a conn.
-     Also sent to peer via max_idle_timeout transport param */
-  ulong idle_timeout;
-
    /* retry: whether address validation using retry packets is enabled (RFC 9000, Section 8.1.2) */
   int retry;
+
+  /* idle_timeout: Upper bound on conn idle timeout (ns).
+     Also sent to peer via max_idle_timeout transport param.
+     If the peer specifies a lower idle timeout, that is used instead. */
+  ulong idle_timeout;
+# define FD_QUIC_DEFAULT_IDLE_TIMEOUT (ulong)(1e9) /* 1s */
+
+  /* ack_delay: median delay on outgoing ACKs.  Greater delays allow
+     fd_quic to coalesce packet ACKs. */
+  ulong ack_delay;
+# define FD_QUIC_DEFAULT_ACK_DELAY (ulong)(50e6) /* 50ms */
+
+  /* ack_threshold: immediately send an ACK when the number of
+     unacknowledged stream bytes exceeds this value. */
+  ulong ack_threshold;
+# define FD_QUIC_DEFAULT_ACK_THRESHOLD (65536UL) /* 64 KiB */
 
   /* TLS config ********************************************/
 
@@ -204,7 +206,6 @@ struct __attribute__((aligned(16UL))) fd_quic_config {
     uchar dscp;
   } net;
 };
-typedef struct fd_quic_config fd_quic_config_t;
 
 /* Callback API *******************************************************/
 
@@ -246,7 +247,7 @@ typedef void
    TODO will only one notify max be served?
    TODO will stream be deallocated immediately after callback?
 
-   notify_type is in FD_QUIC_NOTIFY_{END,RESET,ABORT} */
+   notify_type is one of FD_QUIC_NOTIFY_{...} */
 typedef void
 (* fd_quic_cb_stream_notify_t)( fd_quic_stream_t * stream,
                                 void *             stream_ctx,
@@ -309,7 +310,7 @@ typedef struct fd_quic_callbacks fd_quic_callbacks_t;
 /* TODO: evaluate performance impact of metrics */
 
 union fd_quic_metrics {
-  ulong  ul[ 30 ];
+  ulong  ul[ 46 ];
   struct {
     /* Network metrics */
     ulong net_rx_pkt_cnt;  /* number of IP packets received */
@@ -318,14 +319,18 @@ union fd_quic_metrics {
     ulong net_tx_byte_cnt; /* total bytes sent */
 
     /* Conn metrics */
-    ulong conn_active_cnt;        /* number of active conns */
+    ulong conn_active_cnt;         /* number of active conns */
     ulong conn_created_cnt;        /* number of conns created */
     ulong conn_closed_cnt;         /* number of conns gracefully closed */
     ulong conn_aborted_cnt;        /* number of conns aborted */
+    ulong conn_timeout_cnt;        /* number of conns timed out */
     ulong conn_retry_cnt;          /* number of conns established with retry */
     ulong conn_err_no_slots_cnt;   /* number of conns that failed to create due to lack of slots */
     ulong conn_err_tls_fail_cnt;   /* number of conns that aborted due to TLS failure */
     ulong conn_err_retry_fail_cnt; /* number of conns that failed during retry (e.g. invalid token) */
+
+    /* Frame metrics */
+    ulong frame_rx_cnt[ 22 ];      /* number of frames received (indexed by implementation-defined IDs) */
 
     /* Handshake metrics */
     ulong hs_created_cnt;          /* number of handshake flows created */
@@ -333,8 +338,7 @@ union fd_quic_metrics {
 
     /* Stream metrics */
     ulong stream_opened_cnt;        /* number of streams opened */
-    ulong stream_closed_cnt;        /* number of streams closed */
-       /* TODO differentiate between FIN (graceful) and STOP_SENDING/RESET_STREAM (forcibly)? */
+    ulong stream_closed_cnt[5];     /* indexed by FD_QUIC_STREAM_NOTIFY_{...} */
     ulong stream_active_cnt;        /* number of active streams */
     ulong stream_rx_event_cnt;      /* number of stream RX events */
     ulong stream_rx_byte_cnt;       /* total stream payload bytes received */
@@ -361,7 +365,6 @@ struct fd_quic {
 
   /* ... private variable-length structures follow ... */
 };
-typedef struct fd_quic fd_quic_t;
 
 FD_PROTOTYPES_BEGIN
 
@@ -520,17 +523,26 @@ fd_quic_conn_close( fd_quic_conn_t * conn,
 
 /* fd_quic_get_next_wakeup returns the next requested service time.
    The returned timestamp is relative to a value previously returned by
-   fd_quic_now_t. */
+   fd_quic_now_t.  This is only intended for unit tests. */
 
 FD_QUIC_API ulong
 fd_quic_get_next_wakeup( fd_quic_t * quic );
 
-/* fd_quic_service services QUIC conns and housekeeps fd_quic_t internal
-   state.  The user should call service regularly.  Returns 1 if the
-   service call did any work, or 0 otherwise. */
+/* fd_quic_service services the next QUIC connection, including stream
+   transmit ops, ACK transmit, loss timeout, and idle timeout.   The
+   user should call service at high frequency.  Returns 1 if the service
+   call did any work, or 0 otherwise. */
 
 FD_QUIC_API int
 fd_quic_service( fd_quic_t * quic );
+
+/* fd_quic_svc_validate checks for violations of service queue and free
+   list invariants, such as cycles in linked lists.  Prints to warning/
+   error log and exits the process if checks fail.  Intended for use in
+   tests. */
+
+void
+fd_quic_svc_validate( fd_quic_t * quic );
 
 /* Stream Send API ****************************************************/
 

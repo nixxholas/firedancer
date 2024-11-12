@@ -64,6 +64,20 @@ struct fd_became_leader {
 };
 typedef struct fd_became_leader fd_became_leader_t;
 
+struct fd_rooted_bank {
+  void * bank;
+  ulong  slot;
+};
+
+typedef struct fd_rooted_bank fd_rooted_bank_t;
+
+struct fd_completed_bank {
+   ulong slot;
+   uchar hash[32];
+};
+
+typedef struct fd_completed_bank fd_completed_bank_t;
+
 struct fd_microblock_trailer {
   /* The hash of the transactions in the microblock, ready to be
      mixed into PoH. */

@@ -1,5 +1,7 @@
-#define FD_TEMPL_DEF_STRUCT_BEGIN(NAME)                                \
-  void fd_quic_dump_struct_##NAME( fd_quic_##NAME##_t const * data ) { \
+#define FD_TEMPL_DEF_STRUCT_BEGIN(NAME)                           \
+  static inline                                                   \
+  void                                                            \
+  fd_quic_dump_struct_##NAME( fd_quic_##NAME##_t const * data ) { \
     (void)data;
 
 #define FD_QUIC_FMT_uchar  "u"
@@ -28,11 +30,6 @@
 #define FD_TEMPL_MBR_ELEM_PKTNUM(NAME,TYPE) \
     printf( "  " #NAME " offset: %u\n", data->NAME##_pnoff );
 
-#define FD_TEMPL_MBR_ELEM_BITS(NAME,TYPE,BITS) \
-    printf( "  " #NAME ": %" FD_QUIC_FMT_##TYPE " 0x%" FD_QUIC_HEX_FMT_##TYPE "\n", data->NAME, data->NAME );
-
-#define FD_TEMPL_MBR_ELEM_BITS_TYPE(NAME,TYPE,BITS,CODE) \
-          FD_TEMPL_MBR_ELEM_BITS(NAME,TYPE,BITS)
 
 #define FD_TEMPL_MBR_ELEM_VAR(NAME,BITS_MIN,BITS_MAX,LEN_NAME) \
     do { \

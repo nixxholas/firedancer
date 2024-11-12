@@ -134,6 +134,7 @@ typedef struct {
 
     uint net_tile_count;
     uint quic_tile_count;
+    uint resolv_tile_count;
     uint verify_tile_count;
     uint bank_tile_count;
     uint shred_tile_count;
@@ -199,6 +200,10 @@ typedef struct {
       uint xdp_aio_depth;
 
       uint send_buffer_size;
+
+      ulong multihome_ip_addrs_cnt; /* number of home ip addresses */
+      char  multihome_ip_addrs[FD_NET_MAX_SRC_ADDR][32];
+      uint  multihome_ip4_addrs[FD_NET_MAX_SRC_ADDR];
     } net;
 
     struct {
@@ -211,6 +216,7 @@ typedef struct {
       uint max_concurrent_handshakes;
       uint max_inflight_quic_packets;
       uint idle_timeout_millis;
+      uint ack_delay_millis;
       int  retry;
 
     } quic;
@@ -235,11 +241,13 @@ typedef struct {
     } shred;
 
     struct {
+      char   prometheus_listen_address[ 16 ];
       ushort prometheus_listen_port;
     } metric;
 
     struct {
       int    enabled;
+      char   gui_listen_address[ 16 ];
       ushort gui_listen_port;
     } gui;
 
@@ -266,6 +274,7 @@ typedef struct {
       ulong funk_rec_max;
       ulong funk_sz_gb;
       ulong funk_txn_max;
+      char  funk_file[ PATH_MAX ];
       char  genesis[ PATH_MAX ];
       char  incremental[ PATH_MAX ];
       char  slots_replayed[PATH_MAX ];

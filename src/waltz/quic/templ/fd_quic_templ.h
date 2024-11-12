@@ -1,5 +1,3 @@
-/* TODO rename to fd_quic_pkt_templ.h */
-
 /* 17.2. Long Header Packets
    Long Header Packet {
      Header Form (1) = 1,
@@ -14,14 +12,6 @@
      Type-Specific Payload (..),
    }
    Figure 13: Long Header Packet Format */
-
-/* common to long and short header */
-FD_TEMPL_DEF_STRUCT_BEGIN(common_hdr)
-  FD_TEMPL_MBR_ELEM_BITS( hdr_form,           uchar, 1 )
-  FD_TEMPL_MBR_ELEM_BITS( fixed_bit,          uchar, 1 )
-  FD_TEMPL_MBR_ELEM_BITS( long_packet_type,   uchar, 2 )
-  FD_TEMPL_MBR_ELEM_BITS( type_specific_bits, uchar, 4 )
-FD_TEMPL_DEF_STRUCT_END(common_hdr)
 
 /* long header except first byte */
 FD_TEMPL_DEF_STRUCT_BEGIN(long_hdr)
@@ -47,9 +37,7 @@ FD_TEMPL_DEF_STRUCT_END(long_hdr)
    Figure 14: Version Negotiation Packet */
 
 FD_TEMPL_DEF_STRUCT_BEGIN(version_neg)
-  FD_TEMPL_MBR_ELEM_BITS ( hdr_form,           uchar,  1                      )
-  /* TODO add specification for unused to avoid extra work */
-  FD_TEMPL_MBR_ELEM_BITS ( unused0,            uchar,  7                      )
+  FD_TEMPL_MBR_ELEM      ( h0,                 uchar                          )
   FD_TEMPL_MBR_ELEM      ( version,            uint                           )
   FD_TEMPL_MBR_ELEM      ( dst_conn_id_len,    uchar                          )
   FD_TEMPL_MBR_ELEM_VAR  ( dst_conn_id,        0,2040, dst_conn_id_len        )
@@ -84,11 +72,7 @@ FD_TEMPL_DEF_STRUCT_END(version_neg)
    The first CRYPTO frame sent always begins at an offset of 0 */
 
 FD_TEMPL_DEF_STRUCT_BEGIN(initial)
-  FD_TEMPL_MBR_ELEM_BITS     ( hdr_form,         uchar,  1               )
-  FD_TEMPL_MBR_ELEM_BITS     ( fixed_bit,        uchar,  1               )
-  FD_TEMPL_MBR_ELEM_BITS_TYPE( long_packet_type, uchar,  2, 0x00         )
-  FD_TEMPL_MBR_ELEM_BITS     ( reserved_bits,    uchar,  2               )
-  FD_TEMPL_MBR_ELEM_BITS     ( pkt_number_len,   uchar,  2               )
+  FD_TEMPL_MBR_ELEM          ( h0,               uchar                   )
   FD_TEMPL_MBR_ELEM          ( version,          uint                    )
   FD_TEMPL_MBR_ELEM          ( dst_conn_id_len,  uchar                   )
   FD_TEMPL_MBR_ELEM_VAR      ( dst_conn_id,      0,160,  dst_conn_id_len )
@@ -124,12 +108,7 @@ FD_TEMPL_DEF_STRUCT_END(initial)
    }
    Figure 16: 0-RTT Packet */
 FD_TEMPL_DEF_STRUCT_BEGIN(zero_rtt)
-  FD_TEMPL_MBR_ELEM_BITS     ( hdr_form,         uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS     ( fixed_bit,        uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS_TYPE( long_packet_type, uchar, 2, 0x01         )
-  FD_TEMPL_MBR_ELEM_BITS     ( reserved0,        uchar, 2               )
-  FD_TEMPL_MBR_ELEM_BITS     ( pkt_number_len,   uchar, 2               )
-
+  FD_TEMPL_MBR_ELEM          ( h0,               uchar                  )
   FD_TEMPL_MBR_ELEM          ( version,          uint                   )
   FD_TEMPL_MBR_ELEM          ( dst_conn_id_len,  uchar                  )
   FD_TEMPL_MBR_ELEM_VAR      ( dst_conn_id,      0,160, dst_conn_id_len )
@@ -162,12 +141,7 @@ FD_TEMPL_DEF_STRUCT_END(zero_rtt)
    Figure 17: Handshake Protected Packet */
 
 FD_TEMPL_DEF_STRUCT_BEGIN(handshake)
-  FD_TEMPL_MBR_ELEM_BITS     ( hdr_form,         uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS     ( fixed_bit,        uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS_TYPE( long_packet_type, uchar, 2, 0x02         )
-  FD_TEMPL_MBR_ELEM_BITS     ( reserved_bits,    uchar, 2               )
-  FD_TEMPL_MBR_ELEM_BITS     ( pkt_number_len,   uchar, 2               )
-
+  FD_TEMPL_MBR_ELEM          ( h0,               uchar                  )
   FD_TEMPL_MBR_ELEM          ( version,          uint                   )
   FD_TEMPL_MBR_ELEM          ( dst_conn_id_len,  uchar                  )
   FD_TEMPL_MBR_ELEM_VAR      ( dst_conn_id,      0,160, dst_conn_id_len )
@@ -197,11 +171,7 @@ FD_TEMPL_DEF_STRUCT_END(handshake)
    }
  Figure 18: Retry Packet */
 FD_TEMPL_DEF_STRUCT_BEGIN(retry_hdr)
-  FD_TEMPL_MBR_ELEM_BITS     ( hdr_form,            uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS     ( fixed_bit,           uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS_TYPE( long_packet_type,    uchar, 2, 0x03         )
-  FD_TEMPL_MBR_ELEM_BITS     ( unused,              uchar, 4               )
-
+  FD_TEMPL_MBR_ELEM          ( h0,                  uchar                  )
   FD_TEMPL_MBR_ELEM          ( version,             uint                   )
   FD_TEMPL_MBR_ELEM          ( dst_conn_id_len,     uchar                  )
   FD_TEMPL_MBR_ELEM_VAR      ( dst_conn_id,         0,160, dst_conn_id_len )
@@ -225,13 +195,7 @@ FD_TEMPL_DEF_STRUCT_END(retry_hdr)
    }
    Figure 19: 1-RTT Packet */
 FD_TEMPL_DEF_STRUCT_BEGIN(one_rtt)
-  FD_TEMPL_MBR_ELEM_BITS  ( hdr_form,        uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS  ( fixed_bit,       uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS  ( spin_bit,        uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS  ( reserved0,       uchar, 2               ) // must be set to zero
-  FD_TEMPL_MBR_ELEM_BITS  ( key_phase,       uchar, 1               )
-  FD_TEMPL_MBR_ELEM_BITS  ( pkt_number_len,  uchar, 2               )
-
+  FD_TEMPL_MBR_ELEM       ( h0,               uchar                 )
   FD_TEMPL_MBR_ELEM_HIDDEN( dst_conn_id_len, uint                   )
   FD_TEMPL_MBR_ELEM_VAR   ( dst_conn_id,     0,160, dst_conn_id_len )
 

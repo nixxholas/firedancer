@@ -25144,14 +25144,14 @@ int fd_gossip_duplicate_shred_decode_preflight( fd_bincode_decode_ctx_t * ctx ) 
   return FD_BINCODE_SUCCESS;
 }
 void fd_gossip_duplicate_shred_decode_unsafe( fd_gossip_duplicate_shred_t * self, fd_bincode_decode_ctx_t * ctx ) {
-  fd_bincode_uint16_decode_unsafe( &self->version, ctx );
+  fd_bincode_uint16_decode_unsafe( &self->duplicate_shred_index, ctx );
   fd_pubkey_decode_unsafe( &self->from, ctx );
   fd_bincode_uint64_decode_unsafe( &self->wallclock, ctx );
   fd_bincode_uint64_decode_unsafe( &self->slot, ctx );
-  fd_bincode_uint32_decode_unsafe( &self->shred_index, ctx );
-  fd_bincode_uint8_decode_unsafe( &self->shred_variant, ctx );
-  fd_bincode_uint8_decode_unsafe( &self->chunk_cnt, ctx );
-  fd_bincode_uint8_decode_unsafe( &self->chunk_idx, ctx );
+  fd_bincode_uint32_decode_unsafe( &self->_unused, ctx );
+  fd_bincode_uint8_decode_unsafe( &self->_unused_shred_type, ctx );
+  fd_bincode_uint8_decode_unsafe( &self->num_chunks, ctx );
+  fd_bincode_uint8_decode_unsafe( &self->chunk_index, ctx );
   fd_bincode_uint64_decode_unsafe( &self->chunk_len, ctx );
   if( self->chunk_len ) {
     self->chunk = fd_valloc_malloc( ctx->valloc, 8UL, self->chunk_len );
@@ -25161,7 +25161,7 @@ void fd_gossip_duplicate_shred_decode_unsafe( fd_gossip_duplicate_shred_t * self
 }
 int fd_gossip_duplicate_shred_encode( fd_gossip_duplicate_shred_t const * self, fd_bincode_encode_ctx_t * ctx ) {
   int err;
-  err = fd_bincode_uint16_encode( self->version, ctx );
+  err = fd_bincode_uint16_encode( self->duplicate_shred_index, ctx );
   if( FD_UNLIKELY( err ) ) return err;
   err = fd_pubkey_encode( &self->from, ctx );
   if( FD_UNLIKELY( err ) ) return err;
@@ -25169,13 +25169,13 @@ int fd_gossip_duplicate_shred_encode( fd_gossip_duplicate_shred_t const * self, 
   if( FD_UNLIKELY( err ) ) return err;
   err = fd_bincode_uint64_encode( self->slot, ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  err = fd_bincode_uint32_encode( self->shred_index, ctx );
+  err = fd_bincode_uint32_encode( self->_unused, ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  err = fd_bincode_uint8_encode( (uchar)(self->shred_variant), ctx );
+  err = fd_bincode_uint8_encode( (uchar)(self->_unused_shred_type), ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  err = fd_bincode_uint8_encode( (uchar)(self->chunk_cnt), ctx );
+  err = fd_bincode_uint8_encode( (uchar)(self->num_chunks), ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  err = fd_bincode_uint8_encode( (uchar)(self->chunk_idx), ctx );
+  err = fd_bincode_uint8_encode( (uchar)(self->chunk_index), ctx );
   if( FD_UNLIKELY( err ) ) return err;
   err = fd_bincode_uint64_encode( self->chunk_len, ctx );
   if( FD_UNLIKELY(err) ) return err;
@@ -25188,7 +25188,7 @@ int fd_gossip_duplicate_shred_encode( fd_gossip_duplicate_shred_t const * self, 
 int fd_gossip_duplicate_shred_decode_offsets( fd_gossip_duplicate_shred_off_t * self, fd_bincode_decode_ctx_t * ctx ) {
   uchar const * data = ctx->data;
   int err;
-  self->version_off = (uint)( (ulong)ctx->data - (ulong)data );
+  self->duplicate_shred_index_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint16_decode_preflight( ctx );
   if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
   self->from_off = (uint)( (ulong)ctx->data - (ulong)data );
@@ -25200,16 +25200,16 @@ int fd_gossip_duplicate_shred_decode_offsets( fd_gossip_duplicate_shred_off_t * 
   self->slot_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint64_decode_preflight( ctx );
   if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
-  self->shred_index_off = (uint)( (ulong)ctx->data - (ulong)data );
+  self->_unused_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint32_decode_preflight( ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  self->shred_variant_off = (uint)( (ulong)ctx->data - (ulong)data );
+  self->_unused_shred_type_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint8_decode_preflight( ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  self->chunk_cnt_off = (uint)( (ulong)ctx->data - (ulong)data );
+  self->num_chunks_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint8_decode_preflight( ctx );
   if( FD_UNLIKELY( err ) ) return err;
-  self->chunk_idx_off = (uint)( (ulong)ctx->data - (ulong)data );
+  self->chunk_index_off = (uint)( (ulong)ctx->data - (ulong)data );
   err = fd_bincode_uint8_decode_preflight( ctx );
   if( FD_UNLIKELY( err ) ) return err;
   self->chunk_off = (uint)( (ulong)ctx->data - (ulong)data );
@@ -25239,14 +25239,14 @@ ulong fd_gossip_duplicate_shred_align( void ){ return FD_GOSSIP_DUPLICATE_SHRED_
 
 void fd_gossip_duplicate_shred_walk( void * w, fd_gossip_duplicate_shred_t const * self, fd_types_walk_fn_t fun, const char *name, uint level ) {
   fun( w, self, name, FD_FLAMENCO_TYPE_MAP, "fd_gossip_duplicate_shred", level++ );
-  fun( w, &self->version, "version", FD_FLAMENCO_TYPE_USHORT, "ushort", level );
+  fun( w, &self->duplicate_shred_index, "duplicate_shred_index", FD_FLAMENCO_TYPE_USHORT, "ushort", level );
   fd_pubkey_walk( w, &self->from, fun, "from", level );
   fun( w, &self->wallclock, "wallclock", FD_FLAMENCO_TYPE_ULONG, "ulong", level );
   fun( w, &self->slot, "slot", FD_FLAMENCO_TYPE_ULONG, "ulong", level );
-  fun( w, &self->shred_index, "shred_index", FD_FLAMENCO_TYPE_UINT, "uint", level );
-  fun( w, &self->shred_variant, "shred_variant", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
-  fun( w, &self->chunk_cnt, "chunk_cnt", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
-  fun( w, &self->chunk_idx, "chunk_idx", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
+  fun( w, &self->_unused, "_unused", FD_FLAMENCO_TYPE_UINT, "uint", level );
+  fun( w, &self->_unused_shred_type, "_unused_shred_type", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
+  fun( w, &self->num_chunks, "num_chunks", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
+  fun( w, &self->chunk_index, "chunk_index", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
   fun(w, self->chunk, "chunk", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
   fun( w, self, name, FD_FLAMENCO_TYPE_MAP_END, "fd_gossip_duplicate_shred", level-- );
 }
@@ -31040,6 +31040,122 @@ ulong fd_calculated_stake_rewards_size( fd_calculated_stake_rewards_t const * se
   size += sizeof(ulong);
   size += sizeof(ulong);
   size += sizeof(ulong);
+  return size;
+}
+
+int fd_duplicate_slot_proof_decode( fd_duplicate_slot_proof_t * self, fd_bincode_decode_ctx_t * ctx ) {
+  void const * data = ctx->data;
+  int err = fd_duplicate_slot_proof_decode_preflight( ctx );
+  if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  ctx->data = data;
+  if( !fd_is_null_alloc_virtual( ctx->valloc ) ) {
+    fd_duplicate_slot_proof_new( self );
+  }
+  fd_duplicate_slot_proof_decode_unsafe( self, ctx );
+  return FD_BINCODE_SUCCESS;
+}
+int fd_duplicate_slot_proof_decode_preflight( fd_bincode_decode_ctx_t * ctx ) {
+  int err;
+  ulong shred1_len;
+  err = fd_bincode_uint64_decode( &shred1_len, ctx );
+  if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  if( shred1_len ) {
+    err = fd_bincode_bytes_decode_preflight( shred1_len, ctx );
+    if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  }
+  ulong shred2_len;
+  err = fd_bincode_uint64_decode( &shred2_len, ctx );
+  if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  if( shred2_len ) {
+    err = fd_bincode_bytes_decode_preflight( shred2_len, ctx );
+    if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  }
+  return FD_BINCODE_SUCCESS;
+}
+void fd_duplicate_slot_proof_decode_unsafe( fd_duplicate_slot_proof_t * self, fd_bincode_decode_ctx_t * ctx ) {
+  fd_bincode_uint64_decode_unsafe( &self->shred1_len, ctx );
+  if( self->shred1_len ) {
+    self->shred1 = fd_valloc_malloc( ctx->valloc, 8UL, self->shred1_len );
+    fd_bincode_bytes_decode_unsafe( self->shred1, self->shred1_len, ctx );
+  } else
+    self->shred1 = NULL;
+  fd_bincode_uint64_decode_unsafe( &self->shred2_len, ctx );
+  if( self->shred2_len ) {
+    self->shred2 = fd_valloc_malloc( ctx->valloc, 8UL, self->shred2_len );
+    fd_bincode_bytes_decode_unsafe( self->shred2, self->shred2_len, ctx );
+  } else
+    self->shred2 = NULL;
+}
+int fd_duplicate_slot_proof_encode( fd_duplicate_slot_proof_t const * self, fd_bincode_encode_ctx_t * ctx ) {
+  int err;
+  err = fd_bincode_uint64_encode( self->shred1_len, ctx );
+  if( FD_UNLIKELY(err) ) return err;
+  if( self->shred1_len ) {
+    err = fd_bincode_bytes_encode( self->shred1, self->shred1_len, ctx );
+    if( FD_UNLIKELY( err ) ) return err;
+  }
+  err = fd_bincode_uint64_encode( self->shred2_len, ctx );
+  if( FD_UNLIKELY(err) ) return err;
+  if( self->shred2_len ) {
+    err = fd_bincode_bytes_encode( self->shred2, self->shred2_len, ctx );
+    if( FD_UNLIKELY( err ) ) return err;
+  }
+  return FD_BINCODE_SUCCESS;
+}
+int fd_duplicate_slot_proof_decode_offsets( fd_duplicate_slot_proof_off_t * self, fd_bincode_decode_ctx_t * ctx ) {
+  uchar const * data = ctx->data;
+  int err;
+  self->shred1_off = (uint)( (ulong)ctx->data - (ulong)data );
+  ulong shred1_len;
+  err = fd_bincode_uint64_decode( &shred1_len, ctx );
+  if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  if( shred1_len ) {
+    err = fd_bincode_bytes_decode_preflight( shred1_len, ctx );
+    if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  }
+  self->shred2_off = (uint)( (ulong)ctx->data - (ulong)data );
+  ulong shred2_len;
+  err = fd_bincode_uint64_decode( &shred2_len, ctx );
+  if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  if( shred2_len ) {
+    err = fd_bincode_bytes_decode_preflight( shred2_len, ctx );
+    if( FD_UNLIKELY( err!=FD_BINCODE_SUCCESS ) ) return err;
+  }
+  return FD_BINCODE_SUCCESS;
+}
+void fd_duplicate_slot_proof_new(fd_duplicate_slot_proof_t * self) {
+  fd_memset( self, 0, sizeof(fd_duplicate_slot_proof_t) );
+}
+void fd_duplicate_slot_proof_destroy( fd_duplicate_slot_proof_t * self, fd_bincode_destroy_ctx_t * ctx ) {
+  if( self->shred1 ) {
+    fd_valloc_free( ctx->valloc, self->shred1 );
+    self->shred1 = NULL;
+  }
+  if( self->shred2 ) {
+    fd_valloc_free( ctx->valloc, self->shred2 );
+    self->shred2 = NULL;
+  }
+}
+
+ulong fd_duplicate_slot_proof_footprint( void ){ return FD_DUPLICATE_SLOT_PROOF_FOOTPRINT; }
+ulong fd_duplicate_slot_proof_align( void ){ return FD_DUPLICATE_SLOT_PROOF_ALIGN; }
+
+void fd_duplicate_slot_proof_walk( void * w, fd_duplicate_slot_proof_t const * self, fd_types_walk_fn_t fun, const char *name, uint level ) {
+  fun( w, self, name, FD_FLAMENCO_TYPE_MAP, "fd_duplicate_slot_proof", level++ );
+  fun(w, self->shred1, "shred1", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
+  fun(w, self->shred2, "shred2", FD_FLAMENCO_TYPE_UCHAR, "uchar", level );
+  fun( w, self, name, FD_FLAMENCO_TYPE_MAP_END, "fd_duplicate_slot_proof", level-- );
+}
+ulong fd_duplicate_slot_proof_size( fd_duplicate_slot_proof_t const * self ) {
+  ulong size = 0;
+  do {
+    size += sizeof(ulong);
+    size += self->shred1_len;
+  } while(0);
+  do {
+    size += sizeof(ulong);
+    size += self->shred2_len;
+  } while(0);
   return size;
 }
 

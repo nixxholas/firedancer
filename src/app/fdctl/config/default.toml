@@ -670,6 +670,16 @@ dynamic_port_range = "8900-9000"
     # QUIC tiles are designed to scale linearly when adding more tiles,
     quic_tile_count = 1
 
+    # How many resolver tiles to run.  Should be set to 1.  This is
+    # configurable and designed to scale out for future network
+    # conditions but there is no need to run more than 1 resolver tile
+    # given current `mainnet-beta` conditions, unless the validator is
+    # under a DoS or spam attack.
+    #
+    # Resolve tiles are responsible for resolving address lookup tables
+    # before transactions are scheduled.
+    resolv_tile_count = 1
+
     # How many verify tiles to run.  Verify tiles perform signature
     # verification on incoming transactions, an expensive operation that
     # is often the bottleneck of the validator.
@@ -698,10 +708,11 @@ dynamic_port_range = "8900-9000"
     # parallel users.
     bank_tile_count = 2
 
-    # How many shred tiles to run.  Should be set to 2.  This is
+    # How many shred tiles to run.  Should be set to 1.  This is
     # configurable and designed to scale out for future network
-    # conditions but there is no need to run more than 2 shred tiles
-    # given current `mainnet-beta` conditions.
+    # conditions but there is no need to run more than 1 shred tile
+    # given current `mainnet-beta` conditions.  There is however
+    # a need to run 2 shred tiles under current `testnet` conditions.
     #
     # Shred tiles distribute block data to the network when we are
     # leader, and receive and retransmit it to other nodes when we are
@@ -710,9 +721,9 @@ dynamic_port_range = "8900-9000"
     # Shred tile performance heavily dependent on the number of peer
     # nodes in the cluster, as computing where data should go is an
     # expensive function with this list of peers as the input.  In
-    # development and benchmarking, 1 tile is sufficient to hit very
-    # high TPS rates because the cluster size will be very small.
-    shred_tile_count = 2
+    # development and benchmarking, 1 tile is also sufficient to hit
+    # very high TPS rates because the cluster size will be very small.
+    shred_tile_count = 1
 
 # All memory that will be used in Firedancer is pre-allocated in two
 # kinds of pages: huge and gigantic.  Huge pages are 2MB and gigantic
@@ -820,6 +831,13 @@ dynamic_port_range = "8900-9000"
         # this really be configurable?
         send_buffer_size = 16384
 
+        # The XDP program will filter packets that aren't destined for
+        # the IPv4 address of the interface bound above, but sometimes a
+        # validator may advertise multiple IP addresses.  In this case
+        # the additional addresses can be specified here, and packets
+        # addressed to them will be accepted.
+        multihome_ip_addrs = []
+
     # QUIC tiles are responsible for serving network traffic, including
     # parsing and responding to packets and managing connection timeouts
     # and state machines.  These tiles implement the QUIC protocol,
@@ -887,13 +905,7 @@ dynamic_port_range = "8900-9000"
         # peer needs to be acknowledged before we can discard it, as we
         # may need to retransmit.  This setting configures how many such
         # packets we can have in-flight to the peer and unacknowledged.
-        #
-        # If the expected round trip latency to peers is high,
-        # transaction throughput could be constrained by this option
-        # rather than the underlying link bandwidth.  If you have a lot
-        # of memory available and are constrained by this, it can make
-        # sense to increase.
-        max_inflight_quic_packets = 1000
+        max_inflight_quic_packets = 64
 
         # QUIC has a concept of an idle connection, one where neither
         # the client nor the server has sent any packet to the other for
@@ -902,7 +914,10 @@ dynamic_port_range = "8900-9000"
         #
         # An idle connection will be terminated if it remains idle
         # longer than this threshold.
-        idle_timeout_millis = 2000
+        idle_timeout_millis = 60000
+
+        # Max delay for outgoing ACKs.
+        ack_delay_millis = 50
 
         # QUIC retry is a feature to combat new connection request
         # spamming.  See rfc9000 8.1.2 for more details.  This flag
@@ -1011,6 +1026,12 @@ dynamic_port_range = "8900-9000"
     # of the tiles and serves them via. a Prometheus compatible HTTP
     # endpoint.
     [tiles.metric]
+        # The address to listen on.  By default metrics are only
+        # accessible from the local machine.  If you wish to expose them
+        # to the network, you can change the listen address although it
+        # is not recommended for security reasons.
+        prometheus_listen_address = "127.0.0.1"
+
         # The port to listen on for HTTP request for Prometheus metrics.
         # Firedancer serves metrics at a URI like 127.0.0.1:7999/metrics
         prometheus_listen_port = 7999
@@ -1018,15 +1039,23 @@ dynamic_port_range = "8900-9000"
     # The gui tile receives data from the validator and serves an HTTP
     # endpoint to clients to view it.
     [tiles.gui]
-        # If the GUI is enabled.  If the GUI is enabled, by default it
-        # will not show names or icons for validators unless the
-        # program-id index is also enabled in this TOML file by setting
+        # If the GUI is enabled.
+        # 
+        # Names and icons of peer validators will not be displayed in
+        # the GUI unless the program-id index is enabled, which can be
+        # done by setting
         #
         # [ledger]
         #   account_indexes = ["program-id"]
         #
-        # In this same file.
-        enabled = true
+        # In your configuration above.
+        enabled = false
+
+        # The address to listen on.  By default, if enabled, the GUI
+        # will only be accessible from the local machine.  If you wish
+        # to expose it to the network, you can change the listen address
+        # although this is not recommended for security reasons.
+        gui_listen_address = "127.0.0.1"
 
         # The port to listen on.
         gui_listen_port = 80

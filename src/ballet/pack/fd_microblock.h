@@ -60,7 +60,7 @@ struct __attribute__((aligned(64))) fd_txn_p {
      uint rebated_cus; /* requested_execution_cus-real execution CUs. Pack reads this for CU rebating. */
      uint actual_consumed_cus; /* non_execution_cus+real execution CUs. PoH reads this for block CU counting. */
    } bank_cu; /* Populated by bank. */
-   long received_ticks; /* Timestamp when txn arrives at the pack tile. Used when txn is in extra storage in pack. */
+   ulong blockhash_slot; /* Slot provided by resolv tile when txn arrives at the pack tile. Used when txn is in extra storage in pack. */
   };
   uint  flags; /* Populated by pack, bank.  A combination of the bitfields FD_TXN_P_FLAGS_* defined above */
   /* union {
@@ -74,6 +74,13 @@ struct __attribute__((aligned(64))) fd_txn_p {
 typedef struct fd_txn_p fd_txn_p_t;
 
 #define TXN(txn_p) ((fd_txn_t *)( (txn_p)->_ ))
+
+/* fd_txn_e_t: An fd_txn_p_t with expanded address lookup tables */
+struct __attribute__((aligned(64))) fd_txn_e {
+   fd_txn_p_t     txnp[1];
+   fd_acct_addr_t alt_accts[FD_TXN_ACCT_ADDR_MAX]; /* The used account is in the fd_txn_t*/
+};
+typedef struct fd_txn_e fd_txn_e_t;
 
 #define MAX_TXN_PER_MICROBLOCK ((MAX_MICROBLOCK_SZ-sizeof(fd_entry_batch_meta_t))/sizeof(fd_txn_p_t))
 

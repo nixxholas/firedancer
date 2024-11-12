@@ -27,6 +27,7 @@ $(call add-objs,run/tiles/fd_net,fd_fdctl)
 $(call add-objs,run/tiles/fd_quic,fd_fdctl)
 $(call add-objs,run/tiles/fd_verify,fd_fdctl)
 $(call add-objs,run/tiles/fd_dedup,fd_fdctl)
+$(call add-objs,run/tiles/fd_resolv,fd_fdctl)
 $(call add-objs,run/tiles/fd_pack,fd_fdctl)
 $(call add-objs,run/tiles/fd_bank,fd_fdctl)
 $(call add-objs,run/tiles/fd_poh,fd_fdctl)
@@ -49,6 +50,7 @@ $(call add-objs,run/tiles/fd_replay_thread,fd_fdctl)
 $(call add-objs,run/tiles/fd_poh_int,fd_fdctl)
 $(call add-objs,run/tiles/fd_sender,fd_fdctl)
 $(call add-objs,run/tiles/fd_eqvoc,fd_fdctl)
+$(call add-objs,run/tiles/fd_rpcserv,fd_fdctl)
 endif
 
 # fdctl topologies
@@ -102,6 +104,7 @@ $(OBJDIR)/obj/app/fdctl/run/tiles/fd_store_int.o: src/app/fdctl/run/tiles/genera
 $(OBJDIR)/obj/app/fdctl/run/tiles/fd_replay.o: src/app/fdctl/run/tiles/generated/replay_seccomp.h
 $(OBJDIR)/obj/app/fdctl/run/tiles/fd_sender.o: src/app/fdctl/run/tiles/generated/sender_seccomp.h
 $(OBJDIR)/obj/app/fdctl/run/tiles/fd_eqvoc.o: src/app/fdctl/run/tiles/generated/eqvoc_seccomp.h
+$(OBJDIR)/obj/app/fdctl/run/tiles/fd_rpcserv.o: src/app/fdctl/run/tiles/generated/rpcserv_seccomp.h
 endif
 
 check-agave-hash:

@@ -200,13 +200,11 @@ read_bpf_upgradeable_loader_state_for_program( fd_exec_txn_ctx_t *              
 
 /* https://github.com/anza-xyz/agave/blob/9b22f28104ec5fd606e4bb39442a7600b38bb671/programs/bpf_loader/src/lib.rs#L216-L229 */
 ulong
-calculate_heap_cost( ulong heap_size, ulong heap_cost, int round_up_heap_size, int * err ) {
+calculate_heap_cost( ulong heap_size, ulong heap_cost, int * err ) {
   #define KIBIBYTE_MUL_PAGES       (1024UL * 32UL)
   #define KIBIBYTE_MUL_PAGES_SUB_1 (KIBIBYTE_MUL_PAGES - 1UL)
 
-  if( round_up_heap_size ) {
-    heap_size = fd_ulong_sat_add( heap_size, KIBIBYTE_MUL_PAGES_SUB_1 );
-  }
+  heap_size = fd_ulong_sat_add( heap_size, KIBIBYTE_MUL_PAGES_SUB_1 );
 
   if( FD_UNLIKELY( heap_size==0UL ) ) {
     *err = FD_EXECUTOR_INSTR_ERR_GENERIC_ERR;
@@ -545,9 +543,8 @@ execute( fd_exec_instr_ctx_t * instr_ctx, fd_sbpf_validated_program_t * prog, uc
   /* https://github.com/anza-xyz/agave/blob/9b22f28104ec5fd606e4bb39442a7600b38bb671/programs/bpf_loader/src/lib.rs#L288-L298 */
   ulong heap_size = instr_ctx->txn_ctx->heap_size;
   ulong heap_cost = FD_VM_HEAP_COST;
-  int round_up_heap_size = FD_FEATURE_ACTIVE( instr_ctx->slot_ctx, round_up_heap_size );
   int heap_err = 0;
-  ulong heap_cost_result = calculate_heap_cost( heap_size, heap_cost, round_up_heap_size, &heap_err );
+  ulong heap_cost_result = calculate_heap_cost( heap_size, heap_cost, &heap_err );
 
   if( FD_UNLIKELY( heap_err ) ) {
     return FD_EXECUTOR_INSTR_ERR_GENERIC_ERR;
@@ -575,33 +572,76 @@ execute( fd_exec_instr_ctx_t * instr_ctx, fd_sbpf_validated_program_t * prog, uc
     fd_log_collector_program_return( instr_ctx );
   }
 
+  /* Handles instr + EBPF errors */
   if( FD_UNLIKELY( exec_err!=FD_VM_SUCCESS ) ) {
     fd_valloc_free( instr_ctx->valloc, input );
+
+    /* Instr error case */
     if( instr_ctx->txn_ctx->exec_err_kind==FD_EXECUTOR_ERR_KIND_INSTR ) {
       return instr_ctx->txn_ctx->exec_err;
+    }
+    
+    /* EBPF error case 
+       Edge case with error codes: if direct mapping is enabled, the EBPF error is an access violation,
+       and the access type was a store, a different error code is returned to give developers more insight
+       as to what caused the error.
+       https://github.com/anza-xyz/agave/blob/v2.0.9/programs/bpf_loader/src/lib.rs#L1436-L1470 */
+    if( FD_UNLIKELY( direct_mapping && exec_err==FD_VM_ERR_EBPF_ACCESS_VIOLATION && vm->segv_store_vaddr!=ULONG_MAX ) ) {
+      /* vaddrs start at 0xFFFFFFFF + 1, so anything below it would not correspond to any account metadata. */
+      if( FD_UNLIKELY( vm->segv_store_vaddr>>32UL==0UL ) ) {
+        return FD_EXECUTOR_INSTR_ERR_PROGRAM_FAILED_TO_COMPLETE;
+      }
+    
+      /* Find the account meta corresponding to the vaddr */
+      ulong vaddr_offset = vm->segv_store_vaddr & 0xFFFFFFFFUL;
+      ulong acc_region_addl_off = is_deprecated ? 0UL : MAX_PERMITTED_DATA_INCREASE;
+
+      for( ulong i=0UL; i<instr_ctx->instr->acct_cnt; i++ ) {
+        fd_borrowed_account_t * instr_acc = instr_ctx->instr->borrowed_accounts[i];
+        ulong idx = acc_region_metas[i].region_idx;
+
+        if( input_mem_regions[idx].vaddr_offset<=vaddr_offset && vaddr_offset<input_mem_regions[idx].vaddr_offset+pre_lens[i]+acc_region_addl_off ) {
+          /* Found an input mem region! 
+            https://github.com/anza-xyz/agave/blob/v2.0.9/programs/bpf_loader/src/lib.rs#L1461-L1467 */
+          int err;
+          if( fd_account_is_executable( instr_acc->const_meta ) ) {
+            err = FD_EXECUTOR_INSTR_ERR_EXECUTABLE_DATA_MODIFIED;
+          } else if( fd_instr_acc_is_writable_idx( instr_ctx->instr, i ) ) {
+            err = FD_EXECUTOR_INSTR_ERR_EXTERNAL_DATA_MODIFIED;
+          } else {
+            err = FD_EXECUTOR_INSTR_ERR_READONLY_DATA_MODIFIED;
+          }
+          FD_VM_ERR_FOR_LOG_INSTR( vm, err );
+          return err;
+        }
+      }
     }
     return FD_EXECUTOR_INSTR_ERR_PROGRAM_FAILED_TO_COMPLETE;
   }
 
-  /* TODO: vm should report */
-  ulong err = vm->reg[0];
-  if( FD_UNLIKELY( err ) ) {
+  /* Handles syscall errors
+     TODO: vm should report */
+  ulong syscall_err = vm->reg[0];
+  if( FD_UNLIKELY( syscall_err ) ) {
     fd_valloc_free( instr_ctx->valloc, input );
 
     /* https://github.com/anza-xyz/agave/blob/v2.0.9/programs/bpf_loader/src/lib.rs#L1431-L1434 */
     instr_ctx->txn_ctx->exec_err_kind = FD_EXECUTOR_ERR_KIND_INSTR;
-    return program_error_to_instr_error( err, &instr_ctx->txn_ctx->custom_err );
+    return program_error_to_instr_error( syscall_err, &instr_ctx->txn_ctx->custom_err );
   }
 
+  int err;
   if( FD_UNLIKELY( is_deprecated ) ) {
-    if( FD_UNLIKELY( fd_bpf_loader_input_deserialize_unaligned( *instr_ctx, pre_lens, input, input_sz, !direct_mapping )!=0 ) ) {
+    err = fd_bpf_loader_input_deserialize_unaligned( *instr_ctx, pre_lens, input, input_sz, !direct_mapping );
+    if( FD_UNLIKELY( err!=0 ) ) {
       fd_valloc_free( instr_ctx->valloc, input );
-      return FD_EXECUTOR_INSTR_SUCCESS;
+      return err;
     }
   } else {
-    if( FD_UNLIKELY( fd_bpf_loader_input_deserialize_aligned( *instr_ctx, pre_lens, input, input_sz, !direct_mapping )!=0 ) ) {
+    err = fd_bpf_loader_input_deserialize_aligned( *instr_ctx, pre_lens, input, input_sz, !direct_mapping );
+    if( FD_UNLIKELY( err!=0 ) ) {
       fd_valloc_free( instr_ctx->valloc, input );
-      return FD_EXECUTOR_INSTR_ERR_INVALID_ARG;
+      return err;
     }
 
   }
@@ -1782,12 +1822,6 @@ fd_bpf_loader_program_execute( fd_exec_instr_ctx_t * ctx ) {
       return FD_EXECUTOR_INSTR_ERR_INCORRECT_PROGRAM_ID;
     }
 
-    /* Make sure the program is not in the blacklist */
-    if( FD_UNLIKELY( fd_bpf_is_in_program_blacklist( ctx->slot_ctx, &ctx->instr->program_id_pubkey ) ) ) {
-      fd_log_collector_msg_literal( ctx, "Program is not cached" );
-      return FD_EXECUTOR_INSTR_ERR_INVALID_ACC_DATA;
-    }
-
     /* https://github.com/anza-xyz/agave/blob/77daab497df191ef485a7ad36ed291c1874596e5/programs/bpf_loader/src/lib.rs#L551-L563 */
     /* The Agave client stores a loaded program type state in its implementation
       of the loaded program cache. It checks to see if an account is able to be
@@ -1873,10 +1907,27 @@ fd_bpf_loader_program_execute( fd_exec_instr_ctx_t * ctx ) {
       }
     }
 
-    /* This should NEVER fail. */
+    /* Sadly, we have to tie the cache in with consensus. We tried our best to avoid this,
+       but Agave's program loading logic is too complex to solely rely on checks without
+       significant redundancy. 
+       
+       For example, devnet and testnet have older programs that were deployed before stricter ELF / VM validation
+       checks were put in place, causing these older programs to fail newer validation checks and
+       be unexecutable. `fd_bpf_scan_and_create_bpf_program_cache_entry()` will populate our BPF program
+       cache correctly, but now, we have no way of checking if this validation passed or not here without
+       querying our program cache, otherwise we would have to copy-paste our validation checks here.
+       
+       Any failures here would indicate an attempt to interact with a deployed programs that either failed
+       to load or failed bytecode verification. This applies for v1, v2, and v3 programs. This could
+       also theoretically cause some currently-deployed programs to fail in the future if ELF / VM checks
+       are eventually made stricter. 
+       
+       TLDR: A program is present in the BPF cache iff it is already deployed AND passes current SBPF and VM checks. 
+       Only then it is considered valid to interact with. */
     fd_sbpf_validated_program_t * prog = NULL;
     if( FD_UNLIKELY( fd_bpf_load_cache_entry( ctx->slot_ctx, &ctx->instr->program_id_pubkey, &prog )!=0 ) ) {
-      FD_LOG_ERR(( "Failed to load program from bpf cache." ));
+      fd_log_collector_msg_literal( ctx, "Program is not deployed" );
+      return FD_EXECUTOR_INSTR_ERR_INVALID_ACC_DATA;
     }
 
     return execute( ctx, prog, is_deprecated );

@@ -1927,14 +1927,14 @@
       "name": "gossip_duplicate_shred",
       "type": "struct",
       "fields": [
-        { "name": "version", "type": "ushort" },
+        { "name": "duplicate_shred_index", "type": "ushort" },
         { "name": "from", "type": "pubkey" },
         { "name": "wallclock", "type": "ulong" },
         { "name": "slot", "type": "ulong" },
-        { "name": "shred_index", "type": "uint" },
-        { "name": "shred_variant", "type": "uchar" },
-        { "name": "chunk_cnt", "type": "uchar" },
-        { "name": "chunk_idx", "type": "uchar" },
+        { "name": "_unused", "type": "uint" },
+        { "name": "_unused_shred_type", "type": "uchar" },
+        { "name": "num_chunks", "type": "uchar" },
+        { "name": "chunk_index", "type": "uchar" },
         { "name": "chunk", "type": "vector", "element": "uchar" }
       ]
     },
@@ -2544,6 +2544,15 @@
         { "name": "new_credits_observed", "type": "ulong" }
       ],
       "comment": "https://github.com/anza-xyz/agave/blob/cbc8320d35358da14d79ebcada4dfb6756ffac79/programs/stake/src/rewards.rs#L24"
+    },
+    {
+      "name": "duplicate_slot_proof",
+      "type": "struct",
+      "fields": [
+        { "name": "shred1", "type": "vector", "element": "uchar" },
+        { "name": "shred2", "type": "vector", "element": "uchar" }
+      ],
+      "comment": "https://github.com/anza-xyz/agave/blob/v2.0.3/ledger/src/blockstore_meta.rs#L150-L156"
     }
   ]
 }

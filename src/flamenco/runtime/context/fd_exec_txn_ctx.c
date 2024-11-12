@@ -86,7 +86,7 @@ fd_exec_txn_ctx_delete( void * mem ) {
 int
 fd_txn_borrowed_account_view_idx( fd_exec_txn_ctx_t * ctx,
                                   uchar idx,
-                                  fd_borrowed_account_t * *  account ) {
+                                  fd_borrowed_account_t * * account ) {
   if( FD_UNLIKELY( idx>=ctx->accounts_cnt ) ) {
     return FD_ACC_MGR_ERR_UNKNOWN_ACCOUNT;
   }
@@ -97,6 +97,20 @@ fd_txn_borrowed_account_view_idx( fd_exec_txn_ctx_t * ctx,
   if( FD_UNLIKELY( !fd_acc_exists( txn_account->const_meta ) ) ) {
     return FD_ACC_MGR_ERR_UNKNOWN_ACCOUNT;
   }
+
+  return FD_ACC_MGR_SUCCESS;
+}
+
+int
+fd_txn_borrowed_account_view_idx_allow_dead( fd_exec_txn_ctx_t * ctx,
+                                             uchar idx,
+                                             fd_borrowed_account_t * * account ) {
+  if( FD_UNLIKELY( idx>=ctx->accounts_cnt ) ) {
+    return FD_ACC_MGR_ERR_UNKNOWN_ACCOUNT;
+  }
+
+  fd_borrowed_account_t * txn_account = &ctx->borrowed_accounts[idx];
+  *account = txn_account;
 
   return FD_ACC_MGR_SUCCESS;
 }
@@ -201,6 +215,7 @@ fd_exec_txn_ctx_setup( fd_exec_txn_ctx_t   * txn_ctx,
   txn_ctx->heap_size          = FD_VM_HEAP_DEFAULT;
   txn_ctx->loaded_accounts_data_size_limit = FD_VM_LOADED_ACCOUNTS_DATA_SIZE_LIMIT;
   txn_ctx->accounts_resize_delta = 0;
+  txn_ctx->collected_rent     = 0UL;
 
   txn_ctx->txn_descriptor = txn_descriptor;
   txn_ctx->_txn_raw->raw = txn_raw->raw;

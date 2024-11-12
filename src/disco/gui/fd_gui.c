@@ -78,6 +78,7 @@ fd_gui_new( void *             shmem,
   gui->summary.net_tile_cnt    = fd_topo_tile_name_cnt( gui->topo, "net"    );
   gui->summary.quic_tile_cnt   = fd_topo_tile_name_cnt( gui->topo, "quic"   );
   gui->summary.verify_tile_cnt = fd_topo_tile_name_cnt( gui->topo, "verify" );
+  gui->summary.resolv_tile_cnt = fd_topo_tile_name_cnt( gui->topo, "resolv" );
   gui->summary.bank_tile_cnt   = fd_topo_tile_name_cnt( gui->topo, "bank"   );
   gui->summary.shred_tile_cnt  = fd_topo_tile_name_cnt( gui->topo, "shred"  );
 
@@ -89,7 +90,6 @@ fd_gui_new( void *             shmem,
   gui->summary.estimated_tps_history_idx = 0UL;
   memset( gui->summary.estimated_tps_history, 0, sizeof(gui->summary.estimated_tps_history) );
 
-  gui->summary.last_leader_slot = ULONG_MAX;
   memset( gui->summary.txn_waterfall_reference, 0, sizeof(gui->summary.txn_waterfall_reference) );
   memset( gui->summary.txn_waterfall_current,   0, sizeof(gui->summary.txn_waterfall_current) );
 
@@ -99,7 +99,9 @@ fd_gui_new( void *             shmem,
 
   memset( gui->summary.tile_timers_snap[ 0 ], 0, sizeof(gui->summary.tile_timers_snap[ 0 ]) );
   memset( gui->summary.tile_timers_snap[ 1 ], 0, sizeof(gui->summary.tile_timers_snap[ 1 ]) );
-  gui->summary.tile_timers_snap_idx = 2UL;
+  gui->summary.tile_timers_snap_idx    = 2UL;
+  gui->summary.tile_timers_history_idx = 0UL;
+  for( ulong i=0UL; i<FD_GUI_TILE_TIMER_LEADER_CNT; i++ ) gui->summary.tile_timers_leader_history_slot[ i ] = ULONG_MAX;
 
   gui->epoch.has_epoch[ 0 ] = 0;
   gui->epoch.has_epoch[ 1 ] = 0;
@@ -163,8 +165,9 @@ fd_gui_ws_open( fd_gui_t * gui,
 }
 
 static void
-fd_gui_tile_timers_snap( fd_gui_t *             gui,
-                         fd_gui_tile_timers_t * cur ) {
+fd_gui_tile_timers_snap( fd_gui_t * gui ) {
+  fd_gui_tile_timers_t * cur = gui->summary.tile_timers_snap[ gui->summary.tile_timers_snap_idx ];
+  gui->summary.tile_timers_snap_idx = (gui->summary.tile_timers_snap_idx+1UL)%FD_GUI_TILE_TIMER_SNAP_CNT;
   for( ulong i=0UL; i<gui->topo->tile_cnt; i++ ) {
     fd_topo_tile_t * tile = &gui->topo->tiles[ i ];
     if ( FD_UNLIKELY( !tile->metrics ) ) {
@@ -394,6 +397,20 @@ fd_gui_txn_waterfall_snap( fd_gui_t *               gui,
                               + pack_metrics[ MIDX( COUNTER, PACK, TRANSACTION_DROPPED_FROM_EXTRA ) ];
   cur->out.pack_retained += fd_ulong_if( inserted_to_extra>=inserted_from_extra, inserted_to_extra-inserted_from_extra, 0UL );
 
+  cur->out.resolv_failed = 0UL;
+  for( ulong i=0UL; i<gui->summary.resolv_tile_cnt; i++ ) {
+    fd_topo_tile_t const * resolv = &topo->tiles[ fd_topo_find_tile( topo, "resolv", i ) ];
+    volatile ulong const * resolv_metrics = fd_metrics_tile( resolv->metrics );
+
+    cur->out.resolv_failed += resolv_metrics[ MIDX( COUNTER, RESOLV, NO_BANK_DROP ) ] +
+                              resolv_metrics[ MIDX( COUNTER, RESOLV, BLOCKHASH_EXPIRED ) ];
+    cur->out.resolv_failed += resolv_metrics[ MIDX( COUNTER, RESOLV, LUT_RESOLVED_ACCOUNT_NOT_FOUND ) ]
+                            + resolv_metrics[ MIDX( COUNTER, RESOLV, LUT_RESOLVED_INVALID_ACCOUNT_OWNER ) ]
+                            + resolv_metrics[ MIDX( COUNTER, RESOLV, LUT_RESOLVED_INVALID_ACCOUNT_DATA ) ]
+                            + resolv_metrics[ MIDX( COUNTER, RESOLV, LUT_RESOLVED_ACCOUNT_UNINITIALIZED ) ]
+                            + resolv_metrics[ MIDX( COUNTER, RESOLV, LUT_RESOLVED_INVALID_LOOKUP_INDEX ) ];
+  }
+
 
   fd_topo_tile_t const * dedup = &topo->tiles[ fd_topo_find_tile( topo, "dedup", 0UL ) ];
   volatile ulong const * dedup_metrics = fd_metrics_tile( dedup->metrics );
@@ -549,8 +566,7 @@ fd_gui_poll( fd_gui_t * gui ) {
   }
 
   if( FD_LIKELY( now>gui->next_sample_10millis ) ) {
-    fd_gui_tile_timers_snap( gui, gui->summary.tile_timers_snap[ gui->summary.tile_timers_snap_idx ]);
-    gui->summary.tile_timers_snap_idx = (gui->summary.tile_timers_snap_idx+1UL) % (sizeof(gui->summary.tile_timers_snap)/sizeof(gui->summary.tile_timers_snap[ 0 ]));
+    fd_gui_tile_timers_snap( gui );
 
     fd_gui_printf_live_tile_timers( gui );
     fd_http_server_ws_broadcast( gui->http );
@@ -983,7 +999,6 @@ fd_gui_clear_slot( fd_gui_t * gui,
   slot->compute_units          = ULONG_MAX;
   slot->transaction_fee        = ULONG_MAX;
   slot->priority_fee           = ULONG_MAX;
-  slot->prior_leader_slot      = ULONG_MAX;
   slot->leader_state           = FD_GUI_SLOT_LEADER_UNSTARTED;
   slot->completed_time         = LONG_MAX;
 
@@ -1064,11 +1079,8 @@ fd_gui_handle_slot_start( fd_gui_t * gui,
   if( FD_UNLIKELY( slot->slot!=_slot ) ) fd_gui_clear_slot( gui, _slot, _parent_slot );
   slot->leader_state = FD_GUI_SLOT_LEADER_STARTED;
 
-  fd_gui_tile_timers_snap( gui, slot->tile_timers_begin );
-  slot->tile_timers_begin_snap_idx = gui->summary.tile_timers_snap_idx;
-
-  slot->prior_leader_slot = gui->summary.last_leader_slot;
-  gui->summary.last_leader_slot = _slot;
+  fd_gui_tile_timers_snap( gui );
+  gui->summary.tile_timers_snap_idx_slot_start = (gui->summary.tile_timers_snap_idx+(FD_GUI_TILE_TIMER_SNAP_CNT-1UL))%FD_GUI_TILE_TIMER_SNAP_CNT;
 }
 
 static void
@@ -1087,8 +1099,20 @@ fd_gui_handle_slot_end( fd_gui_t * gui,
   slot->leader_state  = FD_GUI_SLOT_LEADER_ENDED;
   slot->compute_units = _cus_used;
 
-  fd_gui_tile_timers_snap( gui, slot->tile_timers_end );
-  slot->tile_timers_end_snap_idx = gui->summary.tile_timers_snap_idx;
+  fd_gui_tile_timers_snap( gui );
+  /* Record slot number so we can detect overwrite. */
+  gui->summary.tile_timers_leader_history_slot[ gui->summary.tile_timers_history_idx ] = _slot;
+  /* Point into per-leader-slot storage. */
+  slot->tile_timers_history_idx = gui->summary.tile_timers_history_idx;
+  /* Downsample tile timers into per-leader-slot storage. */
+  ulong end = gui->summary.tile_timers_snap_idx;
+  end = fd_ulong_if( end<gui->summary.tile_timers_snap_idx_slot_start, end+FD_GUI_TILE_TIMER_SNAP_CNT, end );
+  gui->summary.tile_timers_leader_history_slot_sample_cnt[ gui->summary.tile_timers_history_idx ] = end-gui->summary.tile_timers_snap_idx_slot_start;
+  ulong stride = fd_ulong_max( 1UL, (end-gui->summary.tile_timers_snap_idx_slot_start) / FD_GUI_TILE_TIMER_LEADER_DOWNSAMPLE_CNT );
+  for( ulong sample_snap_idx=gui->summary.tile_timers_snap_idx_slot_start, i=0UL; sample_snap_idx<end; sample_snap_idx+=stride, i++ ) {
+    memcpy( gui->summary.tile_timers_leader_history[ gui->summary.tile_timers_history_idx ][ i ], gui->summary.tile_timers_snap[ sample_snap_idx%FD_GUI_TILE_TIMER_SNAP_CNT ], sizeof(gui->summary.tile_timers_leader_history[ gui->summary.tile_timers_history_idx ][ i ]) );
+  }
+  gui->summary.tile_timers_history_idx = (gui->summary.tile_timers_history_idx+1UL)%FD_GUI_TILE_TIMER_LEADER_CNT;
 
   /* When a slot ends, snap the state of the waterfall and save it into
      that slot, and also reset the reference counters to the end of the
@@ -1096,6 +1120,7 @@ fd_gui_handle_slot_end( fd_gui_t * gui,
 
   fd_gui_txn_waterfall_snap( gui, slot->waterfall_end );
   fd_gui_tile_prime_metric_snap( gui, slot->waterfall_end, slot->tile_prime_metric_end );
+  memcpy( slot->waterfall_begin, gui->summary.txn_waterfall_reference, sizeof(slot->waterfall_begin) );
   memcpy( gui->summary.txn_waterfall_reference, slot->waterfall_end, sizeof(gui->summary.txn_waterfall_reference) );
   memcpy( slot->tile_prime_metric_begin, gui->summary.tile_prime_metric_ref, sizeof(slot->tile_prime_metric_begin) );
   memcpy( gui->summary.tile_prime_metric_ref, slot->tile_prime_metric_end, sizeof(gui->summary.tile_prime_metric_ref) );
@@ -1377,10 +1402,15 @@ fd_gui_handle_optimistically_confirmed_slot( fd_gui_t * gui,
     for( ulong i=gui->summary.slot_optimistically_confirmed; i>=_slot; i-- ) {
       fd_gui_slot_t * slot = gui->slots[ i % FD_GUI_SLOTS_CNT ];
       if( FD_UNLIKELY( slot->slot==ULONG_MAX ) ) break;
-      FD_TEST( slot->slot==i );
-      slot->level = FD_GUI_SLOT_LEVEL_COMPLETED;
-      fd_gui_printf_slot( gui, i );
-      fd_http_server_ws_broadcast( gui->http );
+      if( FD_LIKELY( slot->slot==i ) ) {
+        /* It's possible for the optimistically confirmed slot to skip
+           backwards between two slots that we haven't yet replayed.  In
+           that case we don't need to change anything, since they will
+           get marked properly when they get completed. */
+        slot->level = FD_GUI_SLOT_LEVEL_COMPLETED;
+        fd_gui_printf_slot( gui, i );
+        fd_http_server_ws_broadcast( gui->http );
+      }
     }
   }
 

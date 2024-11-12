@@ -88,13 +88,9 @@ fd_quic_virtual_pair_init( fd_quic_virtual_pair_t * pair,
 void
 fd_quic_virtual_pair_fini( fd_quic_virtual_pair_t * pair );
 
-/* fd_quic_test_keylog writes the given TLS keylog cstr to the current
-   pcap (if any).  cstr should be one line, newline excluded.  Halts
-   the program on error. */
-
 void
-fd_quic_test_keylog( fd_quic_virtual_pair_t const * pair,
-                     char const *                   line );
+fd_quic_test_cb_tls_keylog( void *       quic_ctx,
+                            char const * line );
 
 FD_PROTOTYPES_END
 
@@ -150,6 +146,35 @@ fd_quic_udpsock_destroy( fd_quic_udpsock_t * udpsock );
 
 void
 fd_quic_udpsock_service( fd_quic_udpsock_t const * udpsock );
+
+
+/* fd_quic_netem injects packet loss and reordering into an aio link. */
+
+struct fd_quic_netem {
+  fd_aio_t         local;
+  fd_aio_t const * dst;
+  float            thresh_drop;
+  float            thresh_reorder;
+
+  ulong reorder_sz;
+  uchar reorder_buf[2048];
+};
+
+typedef struct fd_quic_netem fd_quic_netem_t;
+
+fd_quic_netem_t *
+fd_quic_netem_init( fd_quic_netem_t * netem,
+                    float             thres_drop,
+                    float             thres_reorder );
+
+/* fd_quic_netem_send implements fd_aio_send for fd_quic_netem_t. */
+
+int
+fd_quic_netem_send( void *                    ctx, /* fd_quic_net_em_t */
+                    fd_aio_pkt_info_t const * batch,
+                    ulong                     batch_cnt,
+                    ulong *                   opt_batch_idx,
+                    int                       flush );
 
 FD_PROTOTYPES_END
 

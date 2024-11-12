@@ -48,8 +48,8 @@ write_clock( fd_exec_slot_ctx_t *    slot_ctx,
 
 
 fd_sol_sysvar_clock_t *
-fd_sysvar_clock_read( fd_sol_sysvar_clock_t * result,
-                      fd_exec_slot_ctx_t *    slot_ctx  ) {
+fd_sysvar_clock_read( fd_sol_sysvar_clock_t *    result,
+                      fd_exec_slot_ctx_t const * slot_ctx  ) {
   fd_sol_sysvar_clock_t const * ret = fd_sysvar_cache_clock( slot_ctx->sysvar_cache );
   if( NULL != ret ) {
     fd_memcpy(result, ret, sizeof(fd_sol_sysvar_clock_t));
@@ -273,7 +273,7 @@ fd_calculate_stake_weighted_timestamp(
     }
   }
 
-  FD_LOG_DEBUG(( "stake weighted timestamp: %lu total stake %lu", *result_timestamp, total_stake ));
+  FD_LOG_DEBUG(( "stake weighted timestamp: %ld total stake %lu", *result_timestamp, total_stake ));
 
   // Bound estimate by `max_allowable_drift` since the start of the epoch
   fd_epoch_schedule_t schedule = slot_ctx->epoch_ctx->epoch_bank.epoch_schedule;
@@ -290,7 +290,7 @@ fd_calculate_stake_weighted_timestamp(
     *result_timestamp = clock.epoch_start_timestamp + (long)poh_estimate_offset / NS_IN_S - (long)max_delta_fast / NS_IN_S;
   }
 
-  FD_LOG_DEBUG(( "corrected stake weighted timestamp: %lu", *result_timestamp ));
+  FD_LOG_DEBUG(( "corrected stake weighted timestamp: %ld", *result_timestamp ));
 
   if (*result_timestamp < clock.unix_timestamp) {
     FD_LOG_DEBUG(( "updated timestamp to ancestor" ));

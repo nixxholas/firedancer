@@ -187,23 +187,11 @@ VM_SYCALL_CPI_UPDATE_CALLEE_ACC_FUNC( fd_vm_t *                         vm,
       return err;
     }
 
-    int is_disable_cpi_setting_executable_and_rent_epoch_active = FD_FEATURE_ACTIVE(vm->instr_ctx->slot_ctx, disable_cpi_setting_executable_and_rent_epoch);
-    if( !is_disable_cpi_setting_executable_and_rent_epoch_active &&
-        fd_account_is_executable( callee_acc->meta )!=account_info->executable ) {
-      fd_pubkey_t const * program_acc = &vm->instr_ctx->instr->acct_pubkeys[vm->instr_ctx->instr->program_id];
-      fd_account_set_executable2( vm->instr_ctx, program_acc, callee_acc->meta, (char)account_info->executable);
-    }
-
     uchar const * caller_acc_owner = FD_VM_MEM_HADDR_ST( vm, account_info->owner_addr, alignof(uchar), sizeof(fd_pubkey_t) );
     if( memcmp( callee_acc->meta->info.owner, caller_acc_owner, sizeof(fd_pubkey_t) ) ) {
       fd_memcpy( callee_acc->meta->info.owner, caller_acc_owner, sizeof(fd_pubkey_t) );
     }
 
-    if( !is_disable_cpi_setting_executable_and_rent_epoch_active &&
-        callee_acc->meta->info.rent_epoch!=account_info->rent_epoch ) {
-      if( FD_UNLIKELY( FD_FEATURE_ACTIVE( vm->instr_ctx->slot_ctx, enable_early_verification_of_account_modifications ) ) ) return 1;
-      else callee_acc->meta->info.rent_epoch = account_info->rent_epoch;
-    }
   } else { /* Direct mapping enabled */
     ulong region_idx  = vm->acc_region_metas[ instr_acc_idx ].region_idx;
     uint original_len = vm->acc_region_metas[ instr_acc_idx ].has_data_region ? 
@@ -438,7 +426,7 @@ VM_SYSCALL_CPI_UPDATE_CALLER_ACC_FUNC( fd_vm_t *                   vm,
 
     fd_memcpy( (void*)caller_acc_data, callee_acc_rec->const_data, updated_data_len );
   } else { /* Direct mapping enabled */
-  
+
     /* Look up the borrowed account from the instruction context, which will 
        contain the callee's changes. */
     fd_borrowed_account_t * callee_acc_rec = NULL;
@@ -594,17 +582,13 @@ VM_SYSCALL_CPI_ENTRYPOINT( void *  _vm,
 
   FD_VM_CU_UPDATE( vm, FD_VM_INVOKE_UNITS );
 
-  /* Pre-flight checks ************************************************/
-  int err = fd_vm_syscall_cpi_preflight_check( signers_seeds_cnt, acct_info_cnt, vm->instr_ctx->slot_ctx );
-  if( FD_UNLIKELY( err ) ) {
-    FD_VM_ERR_FOR_LOG_SYSCALL( vm, err );
-    return err;
-  }
-  
   /* Translate instruction ********************************************/
+  /* translate_instruction is the first thing that agave does
+     https://github.com/anza-xyz/agave/blob/838c1952595809a31520ff1603a13f2c9123aa51/programs/bpf_loader/src/syscalls/cpi.rs#L1089 */
   VM_SYSCALL_CPI_INSTR_T const * cpi_instruction =
     FD_VM_MEM_HADDR_LD( vm, instruction_va, VM_SYSCALL_CPI_INSTR_ALIGN, VM_SYSCALL_CPI_INSTR_SIZE );
-
+  /* Agave consumes CU in translate_instruction
+     https://github.com/anza-xyz/agave/blob/838c1952595809a31520ff1603a13f2c9123aa51/programs/bpf_loader/src/syscalls/cpi.rs#L445 */
   if( FD_FEATURE_ACTIVE( vm->instr_ctx->slot_ctx, loosen_cpi_size_restriction ) ) {
     FD_VM_CU_UPDATE( vm, VM_SYSCALL_CPI_INSTR_DATA_LEN( cpi_instruction ) / FD_VM_CPI_BYTES_PER_UNIT );
   }
@@ -612,10 +596,17 @@ VM_SYSCALL_CPI_ENTRYPOINT( void *  _vm,
   /* Derive PDA signers ************************************************/
   fd_pubkey_t signers[ FD_CPI_MAX_SIGNER_CNT ] = {0};
   fd_pubkey_t * caller_program_id = &vm->instr_ctx->txn_ctx->accounts[ vm->instr_ctx->instr->program_id ];
-  /* fd_ulong_sat_mul: signers_seeds_cnt<=16 => no need for sat_mul */
-  fd_vm_vec_t const * signers_seeds = FD_VM_MEM_SLICE_HADDR_LD( vm, signers_seeds_va, FD_VM_VEC_ALIGN, signers_seeds_cnt*FD_VM_VEC_SIZE );
+  /* This is the equivalent of translate_slice in translate_signers:
+     https://github.com/solana-labs/solana/blob/dbf06e258ae418097049e845035d7d5502fe1327/programs/bpf_loader/src/syscalls/cpi.rs#L595 */
+  fd_vm_vec_t const * signers_seeds = FD_VM_MEM_SLICE_HADDR_LD( vm, signers_seeds_va, FD_VM_VEC_ALIGN, fd_ulong_sat_mul( signers_seeds_cnt, FD_VM_VEC_SIZE ) );
+  /* Right after translating, Agave checks against MAX_SIGNERS:
+     https://github.com/solana-labs/solana/blob/dbf06e258ae418097049e845035d7d5502fe1327/programs/bpf_loader/src/syscalls/cpi.rs#L602 */
+  if( FD_UNLIKELY( signers_seeds_cnt > FD_CPI_MAX_SIGNER_CNT ) ) {
+    FD_VM_ERR_FOR_LOG_SYSCALL( vm, FD_VM_ERR_SYSCALL_TOO_MANY_SIGNERS );
+    return FD_VM_ERR_SYSCALL_TOO_MANY_SIGNERS;
+  }
   for( ulong i=0UL; i<signers_seeds_cnt; i++ ) {
-    int err = fd_vm_derive_pda( vm, caller_program_id, signers_seeds[i].addr, signers_seeds[i].len, NULL, &signers[i] );
+    int err = fd_vm_derive_pda( vm, caller_program_id, 0UL, signers_seeds[i].addr, signers_seeds[i].len, NULL, &signers[i] );
     if( FD_UNLIKELY( err ) ) {
       return err;
     }
@@ -643,18 +634,11 @@ VM_SYSCALL_CPI_ENTRYPOINT( void *  _vm,
 
   /* Instruction checks ***********************************************/
 
-  err = fd_vm_syscall_cpi_check_instruction( vm, VM_SYSCALL_CPI_INSTR_ACCS_LEN( cpi_instruction ), VM_SYSCALL_CPI_INSTR_DATA_LEN( cpi_instruction ) );
+  int err = fd_vm_syscall_cpi_check_instruction( vm, VM_SYSCALL_CPI_INSTR_ACCS_LEN( cpi_instruction ), VM_SYSCALL_CPI_INSTR_DATA_LEN( cpi_instruction ) );
   if( FD_UNLIKELY( err ) ) {
     FD_VM_ERR_FOR_LOG_SYSCALL( vm, err );
     return err;
   }
-
-  /* Translate account infos ******************************************/
-  VM_SYSCALL_CPI_ACC_INFO_T * acc_infos =
-    FD_VM_MEM_SLICE_HADDR_ST( vm, 
-                              acct_infos_va,
-                              VM_SYSCALL_CPI_ACC_INFO_ALIGN,
-                              acct_info_cnt*VM_SYSCALL_CPI_ACC_INFO_SIZE );
 
   /* Create the instruction to execute (in the input format the FD runtime expects) from
      the translated CPI ABI inputs. */
@@ -674,6 +658,31 @@ VM_SYSCALL_CPI_ENTRYPOINT( void *  _vm,
   ulong instruction_accounts_cnt;
   err = fd_vm_prepare_instruction( vm->instr_ctx->instr, instruction_to_execute, vm->instr_ctx, instruction_accounts, &instruction_accounts_cnt, signers, signers_seeds_cnt );
   if( FD_UNLIKELY( err ) ) return err;
+
+  /* Translate account infos ******************************************/
+  /* This is the equivalent of translate_slice in translate_account_infos:
+     https://github.com/anza-xyz/agave/blob/838c1952595809a31520ff1603a13f2c9123aa51/programs/bpf_loader/src/syscalls/cpi.rs#L816 */
+  VM_SYSCALL_CPI_ACC_INFO_T * acc_infos =
+    FD_VM_MEM_SLICE_HADDR_ST( vm, 
+                              acct_infos_va,
+                              VM_SYSCALL_CPI_ACC_INFO_ALIGN,
+                              fd_ulong_sat_mul( acct_info_cnt, VM_SYSCALL_CPI_ACC_INFO_SIZE ) );
+  /* Right after translating, Agave checks the number of account infos:
+     https://github.com/anza-xyz/agave/blob/838c1952595809a31520ff1603a13f2c9123aa51/programs/bpf_loader/src/syscalls/cpi.rs#L822 */
+  if( FD_FEATURE_ACTIVE( vm->instr_ctx->slot_ctx, loosen_cpi_size_restriction ) ) {
+    if( FD_UNLIKELY( acct_info_cnt > get_cpi_max_account_infos( vm->instr_ctx->slot_ctx ) ) ) {
+      FD_VM_ERR_FOR_LOG_SYSCALL( vm, FD_VM_ERR_SYSCALL_MAX_INSTRUCTION_ACCOUNT_INFOS_EXCEEDED );
+      return FD_VM_ERR_SYSCALL_MAX_INSTRUCTION_ACCOUNT_INFOS_EXCEEDED;
+    }
+  } else {
+    ulong adjusted_len = fd_ulong_sat_mul( acct_info_cnt, sizeof( fd_pubkey_t ) );
+    if ( FD_UNLIKELY( adjusted_len > FD_VM_MAX_CPI_INSTRUCTION_SIZE ) ) {
+      /* "Cap the number of account_infos a caller can pass to approximate
+          maximum that accounts that could be passed in an instruction" */
+      FD_VM_ERR_FOR_LOG_SYSCALL( vm, FD_VM_ERR_SYSCALL_TOO_MANY_ACCOUNTS );
+      return FD_VM_ERR_SYSCALL_TOO_MANY_ACCOUNTS;
+    }
+  }
 
   /* Update the callee accounts with any changes made by the caller prior to this CPI execution */
   ulong callee_account_keys[256];

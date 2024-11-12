@@ -120,6 +120,8 @@
 #define FD_SHRED_MERKLE_ROOT_SZ (32UL)
 /* FD_SHRED_MERKLE_NODE_SZ: the size of a merkle inclusion proof node in bytes. */
 #define FD_SHRED_MERKLE_NODE_SZ (20UL)
+/* FD_SHRED_MERKLE_LAYER_CNT: the count of inclusion proof layers in the binary merkle tree. */
+#define FD_SHRED_MERKLE_LAYER_CNT (10UL)
 /* FD_SHRED_SIGNATURE_SZ: the size of a signature in a shred. */
 #define FD_SHRED_SIGNATURE_SZ (64UL)
 /* A merkle inclusion proof node. */
@@ -137,6 +139,9 @@ typedef uchar fd_shred_merkle_t[FD_SHRED_MERKLE_NODE_SZ];
 
 /* Maximum number of data shreds in a slot, also maximum number of parity shreds in a slot */
 #define FD_SHRED_MAX_PER_SLOT (1 << 15UL) /* 32,768 shreds */
+
+/* Offset of the shred variant. Used for parsing. */
+#define FD_SHRED_VARIANT_OFF 0x40
 
 /* Firedancer-specific internal error codes.
 

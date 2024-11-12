@@ -62,8 +62,8 @@ fd_quic_sandbox_next_packet( fd_quic_sandbox_t * sandbox ) {
   ulong mline = fd_mcache_line_idx( seq, depth );
 
   fd_frag_meta_t * frag = mcache + mline;
-  if( FD_UNLIKELY( frag->seq < seq ) ) return NULL;
-  if( FD_UNLIKELY( frag->seq > seq ) ) {
+  if( FD_UNLIKELY( fd_seq_lt( frag->seq, seq ) ) ) return NULL;
+  if( FD_UNLIKELY( fd_seq_gt( frag->seq, seq ) ) ) {
     /* Occurs if the fd_quic published 'depth' packets in succession
        without any reads via this function. */
     FD_LOG_WARNING(( "overrun detected, some captured packets were lost" ));
@@ -305,8 +305,7 @@ fd_quic_sandbox_new_conn_established( fd_quic_sandbox_t * sandbox,
       /* peer_conn_id */ &peer_conn_id,
       /* dst_ip_addr  */ FD_QUIC_SANDBOX_PEER_IP4,
       /* dst_udp_addr */ FD_QUIC_SANDBOX_PEER_PORT,
-      /* server       */ quic->config.role == FD_QUIC_ROLE_SERVER,
-      /* version      */ 1 );
+      /* server       */ quic->config.role == FD_QUIC_ROLE_SERVER );
   if( FD_UNLIKELY( !conn ) ) {
     FD_LOG_WARNING(( "fd_quic_conn_create failed" ));
     return NULL;
@@ -314,7 +313,6 @@ fd_quic_sandbox_new_conn_established( fd_quic_sandbox_t * sandbox,
 
   conn->state       = FD_QUIC_CONN_STATE_ACTIVE;
   conn->established = 1;
-  conn->in_schedule = 1;
 
   /* Mock a completed handshake */
   conn->handshake_complete = 1;
@@ -393,4 +391,7 @@ fd_quic_sandbox_send_lone_frame( fd_quic_sandbox_t * sandbox,
   };
 
   fd_quic_sandbox_send_frame( sandbox, conn, &pkt_meta, frame, frame_sz );
+
+  fd_quic_lazy_ack_pkt( sandbox->quic, conn, &pkt_meta );
+
 }

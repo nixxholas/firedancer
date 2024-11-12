@@ -4,6 +4,7 @@
 #include "../stem/fd_stem.h"
 #include "../quic/fd_tpu.h"
 #include "../../tango/fd_tango.h"
+#include "../../waltz/xdp/fd_xdp1.h"
 
 /* Maximum number of workspaces that may be present in a topology. */
 #define FD_TOPO_MAX_WKSPS         (256UL)
@@ -20,6 +21,9 @@
 #define FD_TOPO_MAX_TILE_OUT_LINKS ( 32UL)
 /* Maximum number of objects that a tile can use. */
 #define FD_TOPO_MAX_TILE_OBJS      ( 256UL)
+
+/* Maximum number of additional ip addresses */
+#define FD_NET_MAX_SRC_ADDR 4
 
 /* A workspace is a Firedance specific memory management structure that
    sits on top of 1 or more memory mapped gigantic or huge pages mounted
@@ -140,6 +144,10 @@ typedef struct {
       ushort gossip_listen_port;
       ushort repair_intake_listen_port;
       ushort repair_serve_listen_port;
+
+      /* multihoming support */
+      ulong multihome_ip_addrs_cnt;
+      uint  multihome_ip_addrs[FD_NET_MAX_SRC_ADDR];
     } net;
 
     struct {
@@ -153,6 +161,7 @@ typedef struct {
       uchar  src_mac_addr[ 6 ];
       ushort quic_transaction_listen_port;
       ulong  idle_timeout_millis;
+      uint   ack_delay_millis;
       char   identity_key_path[ PATH_MAX ];
       int    retry;
     } quic;
@@ -196,6 +205,7 @@ typedef struct {
     } sign;
 
     struct {
+      uint   listen_addr;
       ushort listen_port;
 
       int    is_voting;
@@ -205,6 +215,7 @@ typedef struct {
     } gui;
 
     struct {
+      uint   prometheus_listen_addr;
       ushort prometheus_listen_port;
     } metric;
 
@@ -220,6 +231,7 @@ typedef struct {
       ulong funk_rec_max;
       ulong funk_sz_gb;
       ulong funk_txn_max;
+      char  funk_file[ PATH_MAX ];
       char  genesis[ PATH_MAX ];
       char  incremental[ PATH_MAX ];
       char  slots_replayed[ PATH_MAX ];
@@ -314,6 +326,13 @@ typedef struct {
     struct {
       char  identity_key_path[ PATH_MAX ];
     } eqvoc;
+
+    struct {
+      ushort  rpc_port;
+      ushort  tpu_port;
+      uint    tpu_ip_addr;
+      char    identity_key_path[ PATH_MAX ];
+    } rpcserv;
   };
 } fd_topo_tile_t;
 
@@ -612,6 +631,12 @@ void *
 fd_topo_tile_stack_join( char const * app_name,
                          char const * tile_name,
                          ulong        tile_kind_id );
+
+/* Install the XDP program needed by the net tiles into the local device
+   and return the xsk_map_fd. */
+
+fd_xdp_fds_t
+fd_topo_install_xdp( fd_topo_t * topo );
 
 /* fd_topo_run_single_process runs all the tiles in a single process
    (the calling process).  This spawns a thread for each tile, switches

@@ -128,6 +128,8 @@
    fragment that was received.  If the producer is not respecting flow
    control, these may be corrupt or torn and should not be trusted. */
 
+#if FD_HAS_SSE
+
 #include "../topo/fd_topo.h"
 #include "../metrics/fd_metrics.h"
 #include "../../tango/fd_tango.h"
@@ -315,7 +317,7 @@ stem_run1( ulong                        in_cnt,
   event_seq = 0UL;
 
   async_min = fd_tempo_async_min( lazy, event_cnt, (float)fd_tempo_tick_per_ns( NULL ) );
-  if( FD_UNLIKELY( !async_min ) ) FD_LOG_ERR(( "bad lazy %lu %lu", lazy, event_cnt ));
+  if( FD_UNLIKELY( !async_min ) ) FD_LOG_ERR(( "bad lazy %lu %lu", (ulong)lazy, event_cnt ));
 
   FD_LOG_INFO(( "Running stem" ));
   FD_MGAUGE_SET( STEM, STATUS, 1UL );
@@ -688,3 +690,5 @@ stem_run( fd_topo_t *      topo,
              fd_alloca( STEM_SCRATCH_ALIGN, stem_scratch_footprint( polled_in_cnt, tile->out_cnt, reliable_cons_cnt ) ),
              ctx );
 }
+
+#endif /* FD_HAS_SSE */

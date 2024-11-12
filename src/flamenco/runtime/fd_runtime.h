@@ -79,6 +79,22 @@ struct fd_raw_block_txn_iter {
 
 typedef struct fd_raw_block_txn_iter fd_raw_block_txn_iter_t;
 
+/* The prevailing layout we have in the runtime is the meta followed by
+   the account's data. This struct encodes that layout and asserts that
+   the alignment requirements of the constituents are satisfied. */
+// TODO: Use this struct at allocation sites so it's clear we use this layout
+struct __attribute__((packed)) fd_account_rec {
+  fd_account_meta_t meta;
+  uchar data[];
+};
+typedef struct fd_account_rec fd_account_rec_t;
+#define FD_ACCOUNT_REC_ALIGN      (8UL)
+#define FD_ACCOUNT_REC_DATA_ALIGN (8UL)
+FD_STATIC_ASSERT( FD_ACCOUNT_REC_ALIGN>=FD_ACCOUNT_META_ALIGN,     account_rec_meta_align );
+FD_STATIC_ASSERT( FD_ACCOUNT_REC_ALIGN>=FD_ACCOUNT_REC_DATA_ALIGN, account_rec_data_align );
+FD_STATIC_ASSERT( (offsetof(fd_account_rec_t, meta)%FD_ACCOUNT_META_ALIGN)==0,     account_rec_meta_offset );
+FD_STATIC_ASSERT( (offsetof(fd_account_rec_t, data)%FD_ACCOUNT_REC_DATA_ALIGN)==0, account_rec_data_offset );
+
 FD_PROTOTYPES_BEGIN
 
 ulong
@@ -145,6 +161,7 @@ fd_runtime_block_eval_tpool( fd_exec_slot_ctx_t * slot_ctx,
 
 int
 fd_runtime_execute_pack_txns( fd_exec_slot_ctx_t * slot_ctx,
+                              fd_spad_t * spad,
                               fd_capture_ctx_t * capture_ctx,
                               fd_txn_p_t * txns,
                               ulong txn_cnt );
@@ -218,6 +235,7 @@ fd_runtime_prepare_txns_phase3( fd_exec_slot_ctx_t * slot_ctx,
 
 int
 fd_runtime_prepare_execute_finalize_txn( fd_exec_slot_ctx_t *         slot_ctx,
+                                         fd_spad_t *                  spad,
                                          fd_capture_ctx_t *           capture_ctx,
                                          fd_txn_p_t *                 txn,
                                          fd_execute_txn_task_info_t * task_info );
@@ -228,11 +246,11 @@ fd_runtime_block_execute_finalize_tpool( fd_exec_slot_ctx_t * slot_ctx,
                                          fd_block_info_t const * block_info,
                                          fd_tpool_t * tpool );
 
-int
-fd_runtime_collect_rent_from_account( fd_exec_slot_ctx_t * slot_ctx,
-                                      fd_account_meta_t  * acc,
-                                      fd_pubkey_t const  * key,
-                                      ulong                epoch );
+ulong
+fd_runtime_collect_rent_from_account( fd_exec_slot_ctx_t const * slot_ctx,
+                                      fd_account_meta_t  *       acc,
+                                      fd_pubkey_t const  *       key,
+                                      ulong                      epoch );
 
 void
 fd_runtime_execute_txn( fd_execute_txn_task_info_t * task_info );

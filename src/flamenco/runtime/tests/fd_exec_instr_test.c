@@ -63,6 +63,7 @@ static FD_TL char _report_prefix[100] = {0};
 
 struct __attribute__((aligned(32UL))) fd_exec_instr_test_runner_private {
   fd_funk_t * funk;
+  fd_spad_t * spad;
 };
 
 ulong
@@ -80,6 +81,7 @@ fd_exec_instr_test_runner_footprint( void ) {
 
 fd_exec_instr_test_runner_t *
 fd_exec_instr_test_runner_new( void * mem,
+                               void * spad_mem,
                                ulong  wksp_tag ) {
   FD_SCRATCH_ALLOC_INIT( l, mem );
   void * runner_mem = FD_SCRATCH_ALLOC_APPEND( l, alignof(fd_exec_instr_test_runner_t), sizeof(fd_exec_instr_test_runner_t) );
@@ -96,6 +98,9 @@ fd_exec_instr_test_runner_new( void * mem,
 
   fd_exec_instr_test_runner_t * runner = runner_mem;
   runner->funk = funk;
+
+  /* Create spad */
+  runner->spad = fd_spad_join( fd_spad_new( spad_mem, fd_spad_footprint( MAX_TX_ACCOUNT_LOCKS * fd_ulong_align_up( FD_ACC_TOT_SZ_MAX, FD_ACCOUNT_REC_ALIGN ) ) ) );
   return runner;
 }
 
@@ -104,6 +109,7 @@ fd_exec_instr_test_runner_delete( fd_exec_instr_test_runner_t * runner ) {
   if( FD_UNLIKELY( !runner ) ) return NULL;
   fd_funk_delete( fd_funk_leave( runner->funk ) );
   runner->funk = NULL;
+  runner->spad = NULL;
   return runner;
 }
 
@@ -223,7 +229,7 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
   fd_funk_end_write( funk );
   fd_scratch_push();
 
-  ulong vote_acct_max = 128UL;
+  ulong vote_acct_max = MAX_TX_ACCOUNT_LOCKS;
 
   /* Allocate contexts */
   uchar *               epoch_ctx_mem = fd_scratch_alloc( fd_exec_epoch_ctx_align(), fd_exec_epoch_ctx_footprint( vote_acct_max ) );
@@ -307,11 +313,7 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
   memset( txn_ctx->_txn_raw, 0, sizeof(fd_rawtxn_b_t) );
   memset( txn_ctx->return_data.program_id.key, 0, sizeof(fd_pubkey_t) );
   txn_ctx->return_data.len         = 0;
-
-  ulong       total_mem_sz = fd_ulong_align_up( 128UL * FD_ACC_TOT_SZ_MAX, FD_SPAD_ALIGN );
-  uchar *     mem          = fd_valloc_malloc( slot_ctx->valloc, FD_SPAD_ALIGN, total_mem_sz );
-  fd_spad_t * spad         = fd_spad_join( fd_spad_new( mem, total_mem_sz ) );
-  txn_ctx->spad            = spad;
+  txn_ctx->spad                    = runner->spad;
 
   /* Set up instruction context */
 
@@ -328,8 +330,7 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
 
   /* Prepare borrowed account table (correctly handles aliasing) */
 
-  if( FD_UNLIKELY( test_ctx->accounts_count > 128 ) ) {
-    /* TODO remove this hardcoded constant */
+  if( FD_UNLIKELY( test_ctx->accounts_count > MAX_TX_ACCOUNT_LOCKS ) ) {
     REPORT( NOTICE, "too many accounts" );
     return 0;
   }
@@ -362,12 +363,13 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
     if( !_load_account( &borrowed_accts[j], acc_mgr, funk_txn, &test_ctx->accounts[j] ) ) {
       return 0;
     }
+
     if( borrowed_accts[j].const_meta ) {
-      uchar * data = fd_spad_alloc( txn_ctx->spad, FD_SPAD_ALIGN, FD_ACC_TOT_SZ_MAX );
+      uchar * data = fd_spad_alloc( txn_ctx->spad, FD_ACCOUNT_REC_ALIGN, FD_ACC_TOT_SZ_MAX );
       ulong   dlen = borrowed_accts[j].const_meta->dlen;
       fd_memcpy( data, borrowed_accts[j].const_meta, sizeof(fd_account_meta_t)+dlen );
-      borrowed_accts[j].const_meta = borrowed_accts[j].meta = (fd_account_meta_t*)data;
-      borrowed_accts[j].const_data = borrowed_accts[j].data = data + sizeof(fd_account_meta_t);
+      borrowed_accts[j].const_meta = (fd_account_meta_t*)data;
+      borrowed_accts[j].const_data = data + sizeof(fd_account_meta_t);
     }
   }
 
@@ -414,10 +416,9 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
     }
   }
 
-  /* Add accounts to bpf program cache. The program blacklist is intentionally
-     not being updated here because of the fact that  */
+  /* Add accounts to bpf program cache */
   fd_funk_start_write( acc_mgr->funk );
-  fd_bpf_scan_and_create_bpf_program_cache_entry( slot_ctx, funk_txn, 1 );
+  fd_bpf_scan_and_create_bpf_program_cache_entry( slot_ctx, funk_txn );
   fd_funk_end_write( acc_mgr->funk );
 
   /* Restore sysvar cache */
@@ -467,6 +468,14 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
     memcpy( slot_ctx->sysvar_cache->val_rent, &sysvar_rent, sizeof(fd_rent_t) );
   }
 
+  if ( !slot_ctx->sysvar_cache->has_last_restart_slot ) {
+    slot_ctx->sysvar_cache->has_last_restart_slot = 1;
+
+    fd_sol_sysvar_last_restart_slot_t restart = {.slot = 5000};
+
+    memcpy( slot_ctx->sysvar_cache->val_last_restart_slot, &restart, sizeof(fd_sol_sysvar_last_restart_slot_t) );
+  }
+
   /* Set slot bank variables */
   slot_ctx->slot_bank.slot = fd_sysvar_cache_clock( slot_ctx->sysvar_cache )->slot;
 
@@ -499,8 +508,7 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
 
   /* Load instruction accounts */
 
-  if( FD_UNLIKELY( test_ctx->instr_accounts_count > 128 ) ) {
-    /* TODO remove this hardcoded constant */
+  if( FD_UNLIKELY( test_ctx->instr_accounts_count > MAX_TX_ACCOUNT_LOCKS ) ) {
     REPORT( NOTICE, "too many instruction accounts" );
     return 0;
   }
@@ -539,23 +547,21 @@ fd_exec_test_instr_context_create( fd_exec_instr_test_runner_t *        runner,
   //  FIXME: Specifically for CPI syscalls, flag guard this?
   fd_instr_info_sum_account_lamports( info, &info->starting_lamports_h, &info->starting_lamports_l );
 
-  /* This function is used to create context both for instructions and for syscalls,
-     however some of the remaining checks are only relevant for program instructions. */
-  if( !is_syscall ) {
-    /* The remaining checks enforce that the program is one of the accounts and
-      owned by native loader. */
-    bool found_program_id = false;
-    for( uint i = 0; i < test_ctx->accounts_count; i++ ) {
-      if( 0 == memcmp( test_ctx->accounts[i].address, test_ctx->program_id, sizeof(fd_pubkey_t) ) ) {
-        info->program_id = (uchar) i;
-        found_program_id = true;
-        break;
-      }
+  /* The remaining checks enforce that the program is one of the accounts and
+    owned by native loader. */
+  bool found_program_id = false;
+  for( uint i = 0; i < test_ctx->accounts_count; i++ ) {
+    if( 0 == memcmp( test_ctx->accounts[i].address, test_ctx->program_id, sizeof(fd_pubkey_t) ) ) {
+      info->program_id = (uchar) i;
+      found_program_id = true;
+      break;
     }
-    if( !found_program_id ) {
-      REPORT( NOTICE, " Unable to find program_id in accounts" );
-      return 0;
-    }
+  }
+
+  /* Aborting is only important for instr execution */
+  if( !is_syscall && !found_program_id ) {
+    FD_LOG_NOTICE(( " Unable to find program_id in accounts" ));
+    return 0;
   }
 
   ctx->epoch_ctx = epoch_ctx;
@@ -604,7 +610,7 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
   fd_funk_txn_t * funk_txn = fd_funk_txn_prepare( funk, NULL, xid, 1 );
   fd_funk_end_write( runner->funk );
 
-  ulong vote_acct_max = 128UL;
+  ulong vote_acct_max = MAX_TX_ACCOUNT_LOCKS;
 
   /* Allocate contexts */
   uchar *               epoch_ctx_mem = fd_scratch_alloc( fd_exec_epoch_ctx_align(), fd_exec_epoch_ctx_footprint( vote_acct_max ) );
@@ -654,11 +660,9 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
   /* Restore sysvar cache */
   fd_sysvar_cache_restore( slot_ctx->sysvar_cache, acc_mgr, funk_txn );
 
-  /* Add accounts to bpf program cache. The program blacklist is intentionally
-     not being populated here because any inputs that would trigger the blacklist
-     are ignored in the fuzzers/harnesses. */
+  /* Add accounts to bpf program cache */
   fd_funk_start_write( runner->funk );
-  fd_bpf_scan_and_create_bpf_program_cache_entry( slot_ctx, funk_txn, 1 );
+  fd_bpf_scan_and_create_bpf_program_cache_entry( slot_ctx, funk_txn );
 
   /* Default slot */
   ulong slot = test_ctx->slot_ctx.slot ? test_ctx->slot_ctx.slot : 10; // Arbitrary default > 0
@@ -714,7 +718,10 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
 
   /* Provide default stake history if not provided */
   if( !slot_ctx->sysvar_cache->has_stake_history ) {
+    // Provide a 0-set default entry
+    fd_stake_history_entry_t entry = {0};
     fd_sysvar_stake_history_init( slot_ctx );
+    fd_sysvar_stake_history_update( slot_ctx, &entry );
   }
 
   /* Provide default last restart slot sysvar if not provided */
@@ -745,7 +752,8 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
       FD_FEATURE_ACTIVE( slot_ctx, partitioned_epoch_rewards_superfeature )
       ) && !slot_ctx->sysvar_cache->has_epoch_rewards ) {
     fd_point_value_t point_value = {0};
-    fd_sysvar_epoch_rewards_init( slot_ctx, 0, 0, 0, 0, point_value, (fd_hash_t *) empty_bytes);
+    fd_hash_t const * last_hash = test_ctx->blockhash_queue_count > 0 ? (fd_hash_t const *)test_ctx->blockhash_queue[0]->bytes : (fd_hash_t const *)empty_bytes;
+    fd_sysvar_epoch_rewards_init( slot_ctx, 0UL, 0UL, 2UL, 1UL, point_value, last_hash);
   }
 
   /* Restore sysvar cache (again, since we may need to provide default sysvars) */
@@ -770,7 +778,7 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
   fd_block_block_hash_entry_t * recent_block_hashes = deq_fd_block_block_hash_entry_t_alloc( slot_ctx->valloc, FD_SYSVAR_RECENT_HASHES_CAP );
 
   /* Blockhash queue init */
-  slot_ctx->slot_bank.block_hash_queue.max_age   = test_ctx->max_age;
+  slot_ctx->slot_bank.block_hash_queue.max_age   = FD_BLOCKHASH_QUEUE_MAX_ENTRIES;
   slot_ctx->slot_bank.block_hash_queue.ages_root = NULL;
   slot_ctx->slot_bank.block_hash_queue.ages_pool = fd_hash_hash_age_pair_t_map_alloc( slot_ctx->valloc, 400 );
   slot_ctx->slot_bank.block_hash_queue.last_hash = fd_valloc_malloc( slot_ctx->valloc, FD_HASH_ALIGN, FD_HASH_FOOTPRINT );
@@ -830,9 +838,9 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
 
   /* Message */
   /* For v0 transactions, the highest bit of the num_required_signatures is set, and an extra byte is used for the version.
-     https://solanacookbook.com/guides/versioned-transactions.html#versioned-transactions-transactionv0 
-     
-     We will always create a transaction with at least 1 signature, and cap the signature count to 127 to avoid 
+     https://solanacookbook.com/guides/versioned-transactions.html#versioned-transactions-transactionv0
+
+     We will always create a transaction with at least 1 signature, and cap the signature count to 127 to avoid
      collisions with the header_b0 tag. */
   uchar num_required_signatures = fd_uchar_max( 1, fd_uchar_min( 127, (uchar) test_ctx->tx.message.header.num_required_signatures ) );
   if( !test_ctx->tx.message.is_legacy ) {
@@ -941,11 +949,7 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
   fd_runtime_prepare_txns_start( slot_ctx, task_info, txn, 1UL );
 
   /* Setup the spad for account allocation */
-  ulong       total_mem_sz = fd_ulong_align_up( 128UL * FD_ACC_TOT_SZ_MAX, FD_SPAD_ALIGN );
-  uchar *     mem          = fd_valloc_malloc( slot_ctx->valloc, FD_SPAD_ALIGN, total_mem_sz );
-  fd_spad_t * spad         = fd_spad_join( fd_spad_new( mem, total_mem_sz ) );
-  FD_TEST( spad );
-  task_info->txn_ctx->spad = spad;
+  task_info->txn_ctx->spad = runner->spad;
 
   fd_runtime_pre_execute_check( task_info );
 
@@ -956,7 +960,7 @@ _txn_context_create_and_exec( fd_exec_instr_test_runner_t *      runner,
 
   slot_ctx->slot_bank.collected_execution_fees += task_info->txn_ctx->execution_fee;
   slot_ctx->slot_bank.collected_priority_fees  += task_info->txn_ctx->priority_fee;
-
+  slot_ctx->slot_bank.collected_rent           += task_info->txn_ctx->collected_rent;
   return task_info;
 }
 
@@ -966,24 +970,10 @@ fd_exec_test_instr_context_destroy( fd_exec_instr_test_runner_t * runner,
                                     fd_wksp_t *                   wksp,
                                     fd_alloc_t *                  alloc ) {
   if( !ctx ) return;
-  fd_exec_slot_ctx_t *  slot_ctx  = ctx->slot_ctx;
+  fd_exec_slot_ctx_t *  slot_ctx  = (fd_exec_slot_ctx_t *)ctx->slot_ctx;
   if( !slot_ctx ) return;
   fd_acc_mgr_t *        acc_mgr   = slot_ctx->acc_mgr;
   fd_funk_txn_t *       funk_txn  = slot_ctx->funk_txn;
-
-  // Free any allocated borrowed account data
-  for( ulong i = 0; i < ctx->txn_ctx->accounts_cnt; ++i ) {
-    fd_borrowed_account_t * acc = &ctx->txn_ctx->borrowed_accounts[i];
-    void * borrowed_account_mem = fd_borrowed_account_destroy( acc );
-    fd_wksp_t * belongs_to_wksp = fd_wksp_containing( borrowed_account_mem );
-    if( belongs_to_wksp ) {
-      fd_wksp_free_laddr( borrowed_account_mem );
-    }
-  }
-
-  if( ctx->txn_ctx ) {
-    fd_valloc_free( slot_ctx->valloc, ctx->txn_ctx->spad );
-  }
 
   // Free alloc
   if( alloc ) {
@@ -1006,18 +996,12 @@ fd_exec_test_instr_context_destroy( fd_exec_instr_test_runner_t * runner,
 
 static void
 _txn_context_destroy( fd_exec_instr_test_runner_t * runner,
-                      fd_exec_txn_ctx_t *           txn_ctx,
                       fd_exec_slot_ctx_t *          slot_ctx,
                       fd_wksp_t *                   wksp,
                       fd_alloc_t *                  alloc ) {
   if( !slot_ctx ) return; // This shouldn't be false either
   fd_acc_mgr_t *        acc_mgr   = slot_ctx->acc_mgr;
   fd_funk_txn_t *       funk_txn  = slot_ctx->funk_txn;
-
-  /* Free the spad which holds all of the allocations for the borrowed accs */
-  if( txn_ctx ) {
-    fd_valloc_free( slot_ctx->valloc, txn_ctx->spad );
-  }
 
   // Free alloc
   if( alloc ) {
@@ -1026,10 +1010,6 @@ _txn_context_destroy( fd_exec_instr_test_runner_t * runner,
 
   // Detach from workspace
   fd_wksp_detach( wksp );
-
-  if( txn_ctx ) {
-    fd_wksp_free_laddr( fd_exec_txn_ctx_delete( fd_exec_txn_ctx_leave( txn_ctx ) ) );
-  }
 
   fd_exec_slot_ctx_free( slot_ctx );
   fd_acc_mgr_delete( acc_mgr );
@@ -1177,7 +1157,7 @@ _diff_effects( fd_exec_instr_fixture_diff_t * check ) {
   else if( ( exec_result==FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR    ) &
            ( expected->custom_err != ctx->txn_ctx->custom_err ) ) {
     check->has_diff = 1;
-    REPORTV( NOTICE, " expected custom error %d, got %d",
+    REPORTV( NOTICE, " expected custom error %u, got %u",
              expected->custom_err, ctx->txn_ctx->custom_err );
     return;
   }
@@ -1389,7 +1369,7 @@ fd_exec_instr_test_run( fd_exec_instr_test_runner_t * runner,
     /* Copy over account content */
 
     memcpy( out_acct->address, acc->pubkey, sizeof(fd_pubkey_t) );
-    out_acct->lamports     = acc->meta->info.lamports;
+    out_acct->lamports     = acc->const_meta->info.lamports;
     out_acct->data =
       FD_SCRATCH_ALLOC_APPEND( l, alignof(pb_bytes_array_t),
                                   PB_BYTES_ARRAY_T_ALLOCSIZE( acc->const_meta->dlen ) );
@@ -1400,9 +1380,9 @@ fd_exec_instr_test_run( fd_exec_instr_test_runner_t * runner,
     out_acct->data->size = (pb_size_t)acc->const_meta->dlen;
     fd_memcpy( out_acct->data->bytes, acc->const_data, acc->const_meta->dlen );
 
-    out_acct->executable     = acc->meta->info.executable;
-    out_acct->rent_epoch     = acc->meta->info.rent_epoch;
-    memcpy( out_acct->owner, acc->meta->info.owner, sizeof(fd_pubkey_t) );
+    out_acct->executable     = acc->const_meta->info.executable;
+    out_acct->rent_epoch     = acc->const_meta->info.rent_epoch;
+    memcpy( out_acct->owner, acc->const_meta->info.owner, sizeof(fd_pubkey_t) );
 
     effects->modified_accounts_count++;
   }
@@ -1444,7 +1424,7 @@ fd_exec_txn_test_run( fd_exec_instr_test_runner_t * runner, // Runner only conta
     /* Create and exec transaction */
     fd_execute_txn_task_info_t * task_info = _txn_context_create_and_exec( runner, slot_ctx, input );
     if( task_info == NULL ) {
-      _txn_context_destroy( runner, NULL, slot_ctx, wksp, alloc );
+      _txn_context_destroy( runner, slot_ctx, wksp, alloc );
       return 0UL;
     }
     fd_exec_txn_ctx_t * txn_ctx = task_info->txn_ctx;
@@ -1481,9 +1461,19 @@ fd_exec_txn_test_run( fd_exec_instr_test_runner_t * runner, // Runner only conta
       if( exec_res == FD_RUNTIME_TXN_ERR_INSTRUCTION_ERROR ) {
         txn_result->instruction_error = (uint32_t) -task_info->txn_ctx->exec_err;
         txn_result->instruction_error_index = (uint32_t) task_info->txn_ctx->instr_err_idx;
+
+        /* 
+        TODO: precompile error codes are not conformant, so we're ignoring custom error codes for them for now. This should be revisited in the future. 
+        For now, only precompiles throw custom error codes, so we can ignore all custom error codes thrown in the sanitization phase. If this changes,
+        this logic will have to be revisited.
+
+        if( task_info->txn_ctx->exec_err == FD_EXECUTOR_INSTR_ERR_CUSTOM_ERR ) {
+          txn_result->custom_error = txn_ctx->custom_err;
+        } 
+        */
       }
       ulong actual_end = FD_SCRATCH_ALLOC_FINI( l, 1UL );
-      _txn_context_destroy( runner, txn_ctx, slot_ctx, wksp, alloc );
+      _txn_context_destroy( runner, slot_ctx, wksp, alloc );
 
       *output = txn_result;
       return actual_end - (ulong)output_buf;
@@ -1494,7 +1484,7 @@ fd_exec_txn_test_run( fd_exec_instr_test_runner_t * runner, // Runner only conta
     txn_result->fee_details.prioritization_fee    = slot_ctx->slot_bank.collected_priority_fees;
 
     /* Rent is only collected on successfully loaded transactions */
-    txn_result->rent                              = slot_ctx->slot_bank.collected_rent;
+    txn_result->rent                              = txn_ctx->collected_rent;
 
     /* At this point, the transaction has executed */
     if( exec_res ) {
@@ -1536,7 +1526,7 @@ fd_exec_txn_test_run( fd_exec_instr_test_runner_t * runner, // Runner only conta
     /* Capture borrowed accounts */
     for( ulong j=0UL; j < txn_ctx->accounts_cnt; j++ ) {
       fd_borrowed_account_t * acc = &txn_ctx->borrowed_accounts[j];
-      if( !acc->const_meta ) continue;
+      if( !acc->meta ) continue;
 
       ulong modified_idx = txn_result->resulting_state.acct_states_count;
       assert( modified_idx < modified_acct_cnt );
@@ -1568,7 +1558,7 @@ fd_exec_txn_test_run( fd_exec_instr_test_runner_t * runner, // Runner only conta
     }
 
     ulong actual_end = FD_SCRATCH_ALLOC_FINI( l, 1UL );
-    _txn_context_destroy( runner, txn_ctx, slot_ctx, wksp, alloc );
+    _txn_context_destroy( runner, slot_ctx, wksp, alloc );
 
     *output = txn_result;
     return actual_end - (ulong)output_buf;
@@ -1773,12 +1763,13 @@ fd_exec_vm_syscall_test_run( fd_exec_instr_test_runner_t * runner,
   if ( !vm ) {
     goto error;
   }
-  uchar is_deprecated = false; /* tl;dr: solfuzz-agave always checks alignemnt.
-    Agave does NOT check alignment if the owner of the program is deprecated BPF loader,
-    otherwise it defaults to checking alignement.
-    However, in most syscall tests we don't set transaction accounts at all, i.e. there's
-    no account corresponding to "the program", i.e. there's no owner, i.e. alignment is
-    always checked. We rely to txn harness to test non-alignment cases. */
+
+  /* If the program ID account owner is the v1 BPF loader, then alignment is disabled (controlled by
+     the `is_deprecated` flag) */
+  uchar program_id_idx = ctx->instr->program_id;
+  uchar is_deprecated = ( program_id_idx < ctx->txn_ctx->accounts_cnt ) && 
+                        ( !memcmp( ctx->txn_ctx->borrowed_accounts[program_id_idx].const_meta->info.owner, fd_solana_bpf_loader_deprecated_program_id.key, sizeof(fd_pubkey_t) ) );
+
   fd_vm_init(
     vm,
     ctx,
@@ -1845,7 +1836,17 @@ fd_exec_vm_syscall_test_run( fd_exec_instr_test_runner_t * runner,
   }
 
   /* Actually invoke the syscall */
+  int stack_push_err = fd_instr_stack_push( ctx->txn_ctx, (fd_instr_info_t *)ctx->instr );
+  if( FD_UNLIKELY( stack_push_err ) ) {
+      FD_LOG_WARNING(( "instr stack push err" ));
+      goto error;
+  }
   int syscall_err = syscall->func( vm, vm->reg[1], vm->reg[2], vm->reg[3], vm->reg[4], vm->reg[5], &vm->reg[0] );
+  int stack_pop_err = fd_instr_stack_pop( ctx->txn_ctx, ctx->instr );
+  if( FD_UNLIKELY( stack_pop_err ) ) {
+      FD_LOG_WARNING(( "instr stack pop err" ));
+      goto error;
+  }
   if( syscall_err ) {
     /*  In the CPI syscall, certain checks are performed out of order between Firedancer and Agave's
         implementation. Certain checks in FD (whose error codes mapped below)
@@ -1882,7 +1883,7 @@ fd_exec_vm_syscall_test_run( fd_exec_instr_test_runner_t * runner,
       effects->error = (exec_err <= 0) ? -exec_err : -1;
 
       /* Map error kind, equivalent to:
-          effects->error_kind = (fd_exec_test_err_kind_t)(vm->instr_ctx->txn_ctx->exec_err_kind + 1); */ 
+          effects->error_kind = (fd_exec_test_err_kind_t)(vm->instr_ctx->txn_ctx->exec_err_kind + 1); */
       switch (vm->instr_ctx->txn_ctx->exec_err_kind) {
         case FD_EXECUTOR_ERR_KIND_EBPF:
           effects->error_kind = FD_EXEC_TEST_ERR_KIND_EBPF;
@@ -2003,8 +2004,8 @@ __wrap_fd_execute_instr( fd_exec_txn_ctx_t * txn_ctx,
         if( memcmp( acct_state->address, acct_pubkey, sizeof(fd_pubkey_t) ) != 0 ) continue;
 
         /* Fetch borrowed account */
-        /* First check if account is read-only. 
-           TODO: Once direct mapping is enabled we _technically_ don't need 
+        /* First check if account is read-only.
+           TODO: Once direct mapping is enabled we _technically_ don't need
                  this check */
 
         if( fd_txn_borrowed_account_view_idx( txn_ctx, idx_in_txn, &acct ) ) {
@@ -2036,7 +2037,7 @@ __wrap_fd_execute_instr( fd_exec_txn_ctx_t * txn_ctx,
         /* Follow solfuzz-agave, which skips if pubkey is malformed */
         if( memcmp( acct_state->owner, zero_blk, sizeof(fd_pubkey_t) ) != 0 ) {
           fd_memcpy( acct->meta->info.owner, acct_state->owner, sizeof(fd_pubkey_t) );
-        } 
+        }
 
         break;
       }

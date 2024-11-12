@@ -1,19 +1,23 @@
 #include "../../../../disco/tiles.h"
 
 #include <sys/socket.h> /* SOCK_CLOEXEC, SOCK_NONBLOCK needed for seccomp filter */
+#if defined(__aarch64__)
+#include "generated/metric.arm64_seccomp.h"
+#else
 #include "generated/metric_seccomp.h"
+#endif
 
 #include "../../version.h"
 
 #include "../../../../disco/keyguard/fd_keyload.h"
 #include "../../../../disco/metrics/fd_prometheus.h"
 #include "../../../../ballet/http/fd_http_server.h"
+#include "../../../../util/net/fd_ip4.h"
 
 #include <errno.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
-#include <poll.h>
 #include <stdio.h>
 
 #define FD_HTTP_SERVER_METRICS_MAX_CONNS          128
@@ -104,7 +108,7 @@ privileged_init( fd_topo_t *      topo,
     .request = metrics_http_request,
   };
   ctx->metrics_server = fd_http_server_join( fd_http_server_new( _metrics, METRICS_PARAMS, metrics_callbacks, ctx ) );
-  fd_http_server_listen( ctx->metrics_server, tile->metric.prometheus_listen_port );
+  fd_http_server_listen( ctx->metrics_server, tile->metric.prometheus_listen_addr, tile->metric.prometheus_listen_port );
 }
 
 static void
@@ -121,7 +125,7 @@ unprivileged_init( fd_topo_t *      topo,
   if( FD_UNLIKELY( scratch_top > (ulong)scratch + scratch_footprint( tile ) ) )
     FD_LOG_ERR(( "scratch overflow %lu %lu %lu", scratch_top - (ulong)scratch - scratch_footprint( tile ), scratch_top, (ulong)scratch + scratch_footprint( tile ) ));
 
-  FD_LOG_WARNING(( "Prometheus metrics endpoint listening at http://0.0.0.0:%u/metrics", tile->metric.prometheus_listen_port ));
+  FD_LOG_WARNING(( "Prometheus metrics endpoint listening at http://" FD_IP4_ADDR_FMT ":%u/metrics", FD_IP4_ADDR_FMT_ARGS( tile->metric.prometheus_listen_addr ), tile->metric.prometheus_listen_port ));
 }
 
 static ulong
