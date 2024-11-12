@@ -255,6 +255,10 @@ main_pid_namespace( void * _args ) {
   }
 
   ulong child_cnt = 0UL;
+
+  // Force agave to be disabled by default
+  config->development.no_agave = 1;
+
   if( FD_LIKELY( !config->development.no_agave ) ) {
     int pipefd[ 2 ];
     if( FD_UNLIKELY( pipe2( pipefd, O_CLOEXEC ) ) ) FD_LOG_ERR(( "pipe2() failed (%i-%s)", errno, fd_io_strerror( errno ) ));
