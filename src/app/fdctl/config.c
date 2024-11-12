@@ -667,14 +667,14 @@ fdctl_cfg_from_env( int *      pargc,
   strcpy( config->cluster, cluster_to_cstr( cluster ) );
 
 #ifdef FD_HAS_NO_AGAVE
-  if( FD_UNLIKELY( config->is_live_cluster && cluster!=FD_CONFIG_CLUSTER_TESTNET ) )
-    FD_LOG_ERR(( "Attempted to start against live cluster `%s`. Firedancer is not "
-                 "ready for production deployment, has not been tested, and is "
-                 "missing consensus critical functionality. Joining a live Solana "
-                 "cluster may destabilize the network. Please do not attempt. You "
-                 "can start against the testnet cluster by specifying the testnet "
-                 "entrypoints from https://docs.solana.com/clusters under "
-                 "[gossip.entrypoints] in your configuration file.", cluster_to_cstr( cluster ) ));
+  // if( FD_UNLIKELY( config->is_live_cluster && cluster!=FD_CONFIG_CLUSTER_TESTNET ) )
+  //   FD_LOG_ERR(( "Attempted to start against live cluster `%s`. Firedancer is not "
+  //                "ready for production deployment, has not been tested, and is "
+  //                "missing consensus critical functionality. Joining a live Solana "
+  //                "cluster may destabilize the network. Please do not attempt. You "
+  //                "can start against the testnet cluster by specifying the testnet "
+  //                "entrypoints from https://docs.solana.com/clusters under "
+  //                "[gossip.entrypoints] in your configuration file.", cluster_to_cstr( cluster ) ));
 #endif
 
   if( FD_LIKELY( config->is_live_cluster) ) {
