@@ -678,13 +678,13 @@ fdctl_cfg_from_env( int *      pargc,
   }
 
 #if FD_HAS_NO_AGAVE
-  if( FD_UNLIKELY( !strcmp( config->consensus.vote_account_path, "" ) ) ) {
-    FD_TEST( fd_cstr_printf_check( config->consensus.vote_account_path,
-                                   sizeof(config->consensus.vote_account_path),
-                                   NULL,
-                                   "%s/vote-account.json",
-                                   config->scratch_directory ) );
-  }
+  // if( FD_UNLIKELY( !strcmp( config->consensus.vote_account_path, "" ) ) ) {
+  //   FD_TEST( fd_cstr_printf_check( config->consensus.vote_account_path,
+  //                                  sizeof(config->consensus.vote_account_path),
+  //                                  NULL,
+  //                                  "%s/vote-account.json",
+  //                                  config->scratch_directory ) );
+  // }
 #endif
   replace( config->consensus.vote_account_path, "{user}", config->user );
   replace( config->consensus.vote_account_path, "{name}", config->name );
